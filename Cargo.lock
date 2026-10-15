@@ -12300,6 +12300,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "system_upgrader_core"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "lee_core",
+]
+
+[[package]]
 name = "tachys"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12729,10 +12737,12 @@ dependencies = [
  "key_protocol",
  "lee",
  "lee_core",
+ "program_loader_core",
  "programs",
  "rand 0.8.6",
  "serde",
  "system_accounts",
+ "system_upgrader_core",
 ]
 
 [[package]]
