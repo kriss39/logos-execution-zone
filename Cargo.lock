@@ -1517,6 +1517,7 @@ dependencies = [
  "serde",
  "serde_json",
  "system_accounts",
+ "system_upgrader_core",
  "test_guest_core",
  "test_methods",
  "testnet_initial_state",
@@ -1779,6 +1780,7 @@ dependencies = [
  "serde_with",
  "sha2 0.10.9",
  "system_accounts",
+ "system_upgrader_core",
  "thiserror 2.0.18",
 ]
 
