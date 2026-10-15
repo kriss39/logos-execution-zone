@@ -79,9 +79,9 @@ async fn image_id(ctx: &TestContext, program: AccountId) -> Result<ProgramId> {
     Ok(header.image_id)
 }
 
-/// The new code is uploaded, the committee's approvals of `bridge`'s upgrade are submitted to the
-/// sequencers and the producer schedules it, and from the block it activates in `bridge` runs it
-/// while blocks keep coming.
+/// The new code is uploaded, the committee's approvals of `bridge`'s upgrade are submitted to one
+/// sequencer and gossiped to the other, the producer schedules it, and from the block it activates
+/// in `bridge` runs it while blocks keep coming.
 #[test]
 async fn an_approved_system_upgrade_goes_live_at_its_height() -> Result<()> {
     let new_code = test_programs::scripted();
@@ -95,7 +95,8 @@ async fn an_approved_system_upgrade_goes_live_at_its_height() -> Result<()> {
                 num_nodes: 2,
                 ..MultiNodeTestContextConfig::default()
             })
-            .with_sequencer_partial_config(fast_blocks()),
+            .with_sequencer_partial_config(fast_blocks())
+            .with_gossip(),
         )
         .build()
         .await?;
@@ -124,8 +125,8 @@ async fn an_approved_system_upgrade_goes_live_at_its_height() -> Result<()> {
         ctx.wallet().poll_transaction(tx_hash).await?;
     }
 
-    // The committee approves the upgrade. Without gossip yet, each approval goes to every
-    // sequencer, and whichever produces next builds the `Schedule` from them.
+    // The committee approves the upgrade. The approvals go to one sequencer, gossip carries them
+    // to the other, and whichever produces next builds the `Schedule` from them.
     let now = ctx.sequencer_client().get_last_block_id().await?;
     let activation_height = now.saturating_add(UPGRADE_DELAY);
     let proposal = system_upgrader_core::Proposal::Schedule {
@@ -134,23 +135,13 @@ async fn an_approved_system_upgrade_goes_live_at_its_height() -> Result<()> {
         image_id: new_code.id(),
         activation_height,
     };
-    let approvals =
-        committee_approvals(&ctx, &proposal, now.saturating_add(APPROVAL_LIFETIME)).await?;
-    let (channel_id, _) = ctx.zones_iter().next().context("the test has a zone")?;
-    for sequencer in ctx
-        .sequencer_components_iter(*channel_id)
-        .context("the zone has sequencers")?
+    for approval in
+        committee_approvals(&ctx, &proposal, now.saturating_add(APPROVAL_LIFETIME)).await?
     {
-        for approval in &approvals {
-            let signed = system_upgrader_core::SignedApproval {
-                proposal,
-                approval: approval.clone(),
-            };
-            sequencer
-                .sequencer_client
-                .submit_system_approval(hex::encode(borsh::to_vec(&signed)?))
-                .await?;
-        }
+        let signed = system_upgrader_core::SignedApproval { proposal, approval };
+        ctx.sequencer_client()
+            .submit_system_approval(hex::encode(borsh::to_vec(&signed)?))
+            .await?;
     }
     // Read before the height, so a chain still short of it after the read was short during it.
     let image_before = image_id(&ctx, bridge).await?;

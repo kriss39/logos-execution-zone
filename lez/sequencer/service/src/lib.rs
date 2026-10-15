@@ -17,7 +17,7 @@ pub use sequencer_core::config::*;
 use sequencer_core::{gossip::AccreditedKeysReceiver, load_or_create_signing_key};
 use sequencer_gossip_actor::{
     GossipActor,
-    protocol::{PublishConfig, PublishTransaction},
+    protocol::{Publish, PublishConfig},
 };
 #[cfg(feature = "rpc")]
 use sequencer_rpc_server_actor::RpcServerActor;
@@ -406,7 +406,7 @@ pub async fn setup_gossip(
     slasher_ref: &ActorRef<SlasherActor>,
     config_manager_ref: &ActorRef<ChannelConfigActor>,
     scheduler_ref: &ActorRef<Scheduler>,
-) -> Result<(Gossip, Recipient<PublishTransaction>)> {
+) -> Result<(Gossip, Recipient<Publish>)> {
     // The node's L1 bedrock signing key is deliberately reused as the
     // libp2p identity; `GossipActor::new` derives the keypair.
     let signing_key = load_or_create_signing_key(&sequencer_home.join("bedrock_signing_key"))?;
@@ -426,6 +426,19 @@ pub async fn setup_gossip(
         })
     });
 
+    // Gossiped system_upgrader approvals go to the executor's approval pool, as RPC submissions do.
+    let approval_ref = executor_ref.clone();
+    let submit_system_approval: sequencer_gossip_actor::SystemApprovalSubmit =
+        std::sync::Arc::new(move |approval| {
+            let approval_executor_ref = approval_ref.clone();
+            Box::pin(async move {
+                approval_executor_ref
+                    .ask(sequencer_executor_actor::protocol::SubmitSystemApproval { approval })
+                    .await
+                    .map_err(Into::into)
+            })
+        });
+
     // note on `Box::pin` here: the swarm construction makes this awaited future large,
     // and it would otherwise sit inline in every future that awaits the service start.
     //
@@ -442,6 +455,7 @@ pub async fn setup_gossip(
         staked_keys_rx,
         // Screened inbound channel-config messages go straight to the actor.
         config_manager_ref.clone().recipient(),
+        submit_system_approval,
     ))
     .await
     .context("Failed to start sequencer gossip network")?;
@@ -519,7 +533,7 @@ async fn setup_rpc_server(
     listen_addr: SocketAddr,
     max_block_size: bytesize::ByteSize,
     executor_ref: ActorRef<ExecutorActor>,
-    gossip_publisher: Option<Recipient<PublishTransaction>>,
+    gossip_publisher: Option<Recipient<Publish>>,
 ) -> Result<RpcServer> {
     let rpc_server =
         RpcServerActor::new(listen_addr, max_block_size, executor_ref, gossip_publisher)
