@@ -229,7 +229,7 @@ fn initial_programs(cross_zone: bool) -> Vec<(AccountId, Program)> {
 /// caller states the choice.
 #[must_use]
 pub fn initial_state(cross_zone: bool) -> V03State {
-    lee::V03State::new()
+    lee::GenesisBuilder::new()
         .with_public_accounts(initial_public_accounts())
         .with_recovery_bindings(initial_recovery_bindings())
         .with_programs_at(
@@ -237,6 +237,7 @@ pub fn initial_state(cross_zone: bool) -> V03State {
                 .into_iter()
                 .map(|(account_id, program)| (account_id, program, true)),
         )
+        .build()
 }
 
 #[cfg(test)]
