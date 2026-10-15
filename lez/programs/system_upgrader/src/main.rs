@@ -5,8 +5,9 @@
 //! records the chain and the block it activates in in the registry; `Apply`, in that block,
 //! checks and clears that record, then has the program loader point the program's header at the
 //! new chain, authorized through the program's PDA seed. `Cancel` clears a pending record without
-//! upgrading. `Schedule` and `Cancel` carry the sequencer committee's approvals, which
-//! `sequencer_stake` verifies. Every message is handled at the registry's actor.
+//! upgrading, and `Install` deploys a new system program the same way. `Schedule`, `Cancel` and
+//! `Install` carry the sequencer committee's approvals, which `sequencer_stake` verifies. Every
+//! message is handled at the registry's actor.
 
 use lee_core::program::{PdaSeed, ReceiveInput, Response, SyncMessage};
 use program_loader_core::Message as LoaderMessage;
@@ -120,6 +121,25 @@ fn handle_message(input: &ReceiveInput, message: Message) -> Response {
             *pending = None;
             // Before the upgrade's block, which must carry its `Apply`: its producer has no choice.
             Response::set_state(registry.to_bytes()).block_window(..activation_height)
+        }
+        Message::Install {
+            name,
+            first_segment,
+            image_id,
+            ..
+        } => {
+            assert!(
+                registry.programs.insert(name, None).is_none(),
+                "system program is already registered"
+            );
+            Response::set_state(registry.to_bytes()).send(loader_message(
+                &name,
+                &LoaderMessage::CreateHeaderOf {
+                    first_segment,
+                    image_id,
+                    immutable: false,
+                },
+            ))
         }
     };
     match approval_check {

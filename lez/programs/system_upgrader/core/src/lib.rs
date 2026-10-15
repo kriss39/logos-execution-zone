@@ -1,4 +1,4 @@
-//! `system_upgrader`: upgrades the system programs, each one of its PDAs
+//! `system_upgrader`: upgrades and installs the system programs, each one of its PDAs
 //! (`PdaSeed::for_system_program(name)`). Pending upgrades live in its registry. Every change but
 //! `Apply` must be approved by the zone's sequencer committee, and only the block producer
 //! includes its transactions.
@@ -46,6 +46,13 @@ pub enum Message {
         activation_height: BlockId,
         approvals: Vec<Approval>,
     },
+    /// Deploys a new, mutable system program `name` from the chain at `first_segment`.
+    Install {
+        name: SystemProgramName,
+        first_segment: AccountId,
+        image_id: ProgramId,
+        approvals: Vec<Approval>,
+    },
 }
 
 impl Message {
@@ -81,6 +88,19 @@ impl Message {
                 },
                 approvals,
             )),
+            Self::Install {
+                name,
+                first_segment,
+                image_id,
+                approvals,
+            } => Some((
+                Proposal::Install {
+                    name: *name,
+                    first_segment: *first_segment,
+                    image_id: *image_id,
+                },
+                approvals,
+            )),
             Self::Apply { .. } => None,
         }
     }
@@ -100,6 +120,11 @@ pub enum Proposal {
         name: SystemProgramName,
         first_segment: AccountId,
         activation_height: BlockId,
+    },
+    Install {
+        name: SystemProgramName,
+        first_segment: AccountId,
+        image_id: ProgramId,
     },
 }
 
@@ -121,7 +146,7 @@ pub struct ScheduledUpgrade {
 }
 
 /// Every upgradable system program, by name, with its pending upgrade, if any. Held in the
-/// registry's actor state ([`registry_actor`]): seeded at genesis.
+/// registry's actor state ([`registry_actor`]): seeded at genesis, extended by `Install`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Registry {
     pub programs: BTreeMap<SystemProgramName, Option<ScheduledUpgrade>>,
