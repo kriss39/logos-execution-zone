@@ -251,9 +251,10 @@ fn metered_nonzero_exit_is_charged_its_metered_cycles() {
     let program_id = AccountId::from_builtin_program(crate::test_methods::exits_nonzero().id());
     let state = V03State::new()
         .with_public_account_balances([(from, 100)])
-        .with_named_programs(std::iter::once((
+        .with_programs_at(std::iter::once((
             program_id,
             crate::test_methods::exits_nonzero(),
+            true,
         )));
     let exiting = Actor::new(from, program_id);
     let tx = public_tx(exiting, vec![exiting], vec![Nonce(0)], (), &[&from_key]);

@@ -2343,9 +2343,9 @@ async fn block_production_aborts_when_clock_account_data_is_corrupted() {
 /// `CLOCK_01` account observe it.
 fn state_with_clock_and_program(program: Program, clock_timestamp: u64) -> V03State {
     let program_id = AccountId::from_builtin_program(program.id());
-    let mut state = V03State::new().with_named_programs([
-        (programs::clock_account_id(), programs::clock()),
-        (program_id, program),
+    let mut state = V03State::new().with_programs_at([
+        (programs::clock_account_id(), programs::clock(), true),
+        (program_id, program, true),
     ]);
     for clock_id in system_accounts::clock_account_ids() {
         state.force_insert_account(clock_id, system_accounts::clock_account());
@@ -3882,9 +3882,10 @@ fn diag_sequencer_stake_writes_the_ownership_account_record() {
 
     let config_id = system_accounts::sequencer_stake_config_account_id();
     let mut state = V03State::new()
-        .with_named_programs([(
+        .with_programs_at([(
             programs::sequencer_stake_account_id(),
             programs::sequencer_stake(),
+            true,
         )])
         .with_public_accounts([
             (funding_id, Account::funded(amount)),
@@ -4044,9 +4045,10 @@ fn stake_entry(
 /// account holding `funding_balance`.
 fn stake_test_state(funding_id: AccountId, funding_balance: u128) -> V03State {
     V03State::new()
-        .with_named_programs([(
+        .with_programs_at([(
             programs::sequencer_stake_account_id(),
             programs::sequencer_stake(),
+            true,
         )])
         .with_public_accounts([
             (funding_id, Account::funded(funding_balance)),
@@ -4404,9 +4406,10 @@ fn a_fully_exited_ownership_account_can_stake_again() {
     let sequencer_key = test_sequencer_key(0x42);
 
     let mut state = V03State::new()
-        .with_named_programs([(
+        .with_programs_at([(
             programs::sequencer_stake_account_id(),
             programs::sequencer_stake(),
+            true,
         )])
         .with_public_accounts([
             (funding_id, Account::funded(amount)),
@@ -5418,7 +5421,7 @@ fn a_privately_owned_and_funded_stake_is_slashed_without_its_owners_witness() {
 // `state` with `TIPS` waiting in the fee inbox and the fee program to distribute them.
 fn tipped(state: V03State) -> V03State {
     state
-        .with_named_programs([(programs::fee_account_id(), programs::fee())])
+        .with_programs_at([(programs::fee_account_id(), programs::fee(), true)])
         .with_public_accounts([
             (
                 system_accounts::fee_state_account_id(),

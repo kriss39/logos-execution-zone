@@ -69,7 +69,7 @@ impl V03State {
             crate::test_methods::flash_swap_initiator(),
             crate::test_methods::flash_swap_callback(),
         ])
-        .with_named_programs([(TWIN, crate::test_methods::scripted())])
+        .with_programs_at([(TWIN, crate::test_methods::scripted(), true)])
     }
 
     #[must_use]
