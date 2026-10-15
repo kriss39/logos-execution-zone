@@ -2652,6 +2652,30 @@ fn resubmittable_txs_drops_clock_and_bridge_deposits() {
     assert_eq!(resubmittable_txs(&block), vec![user_tx, withdraw_tx]);
 }
 
+/// An approved change can't be rebuilt, so a rewind returns it; the producer rebuilds `Apply`.
+#[test]
+fn resubmittable_txs_keeps_an_approved_system_change_and_drops_apply() {
+    let schedule = system_upgrader_tx(&system_upgrader_core::Message::Schedule {
+        name: programs::CLOCK_NAME,
+        first_segment: AccountId::new([1; 32]),
+        image_id: [0; 8],
+        activation_height: 5,
+        approvals: vec![],
+    });
+    let apply = system_upgrader_tx(&system_upgrader_core::Message::Apply {
+        name: programs::CLOCK_NAME,
+        activation_height: 5,
+    });
+
+    let block = common::test_utils::produce_dummy_block(
+        2,
+        Some(HashType([1; 32])),
+        vec![schedule.clone(), apply],
+    );
+
+    assert_eq!(resubmittable_txs(&block), vec![schedule]);
+}
+
 #[test]
 fn resubmittable_txs_of_blocks_without_user_txs_is_empty() {
     // No transactions at all (not even the mandatory clock tx).
@@ -6485,4 +6509,70 @@ async fn a_turn_on_a_view_with_a_hole_is_skipped() {
     assert_eq!(sequencer.chain_height().await, 1);
     assert_eq!(sequencer.chain().lock().await.pin(), pin);
     assert_eq!(sequencer.mempool.len(), 1, "the user transaction is kept");
+}
+
+/// Genesis, with `clock`'s upgrade to the chain at `[0x51; 32]` due in block `activation_height`.
+fn state_with_clock_upgrade_due_at(activation_height: lee_core::BlockId) -> lee::V03State {
+    use lee_core::program::SYSTEM_UPGRADER_ACCOUNT_ID;
+    use system_upgrader_core::{Registry, ScheduledUpgrade, registry_account_id};
+
+    let genesis = testnet_initial_state::initial_state(false);
+    let mut registry = common::system_upgrades::registry(&genesis);
+    registry.programs.insert(
+        programs::CLOCK_NAME,
+        Some(ScheduledUpgrade {
+            first_segment: AccountId::new([0x51; 32]),
+            image_id: [0; 8],
+            activation_height,
+        }),
+    );
+    genesis.with_public_accounts([(
+        registry_account_id(),
+        lee::Account::default().with_actor_state(
+            SYSTEM_UPGRADER_ACCOUNT_ID,
+            Registry::to_bytes(&registry).into(),
+        ),
+    )])
+}
+
+/// An unsigned `system_upgrader` transaction to its registry, as a producer builds it.
+fn system_upgrader_tx(message: &system_upgrader_core::Message) -> LeeTransaction {
+    let registry = system_upgrader_core::registry_actor();
+    LeeTransaction::Public(PublicTransaction::new(
+        lee::public_transaction::Message::try_new(registry, [registry], BTreeMap::new(), message)
+            .unwrap(),
+        lee::public_transaction::WitnessSet::from_raw_parts(vec![]),
+    ))
+}
+
+#[test]
+fn a_due_system_upgrade_gets_an_apply() {
+    use system_upgrader_core::{loader_actor, registry_actor};
+
+    let state = state_with_clock_upgrade_due_at(5);
+
+    assert_eq!(
+        super::build_due_apply_tx(&state, 4),
+        None,
+        "nothing is due before the upgrade's height"
+    );
+    let expected = LeeTransaction::Public(lee::PublicTransaction::new(
+        lee::public_transaction::Message::try_new(
+            registry_actor(),
+            [registry_actor(), loader_actor(&programs::CLOCK_NAME)],
+            BTreeMap::new(),
+            system_upgrader_core::Message::Apply {
+                name: programs::CLOCK_NAME,
+                activation_height: 5,
+            },
+        )
+        .unwrap(),
+        lee::public_transaction::WitnessSet::from_raw_parts(vec![]),
+    ));
+    assert_eq!(super::build_due_apply_tx(&state, 5), Some(expected));
+    assert_eq!(
+        super::build_due_apply_tx(&state, 6),
+        None,
+        "an upgrade activates only at its height"
+    );
 }
