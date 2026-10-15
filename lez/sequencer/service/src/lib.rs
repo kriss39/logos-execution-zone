@@ -119,25 +119,6 @@ impl SequencerHandle {
         storage.shutdown().await;
     }
 
-    /// Hands the executor an approved `system_upgrader` transaction, past the RPC and gossip
-    /// entry points that refuse them. The producer includes it in the slot before the fee.
-    /// Approvals normally arrive through `submitSystemApproval` instead, and the producer builds
-    /// the transaction itself.
-    pub async fn submit_system_upgrader_tx(
-        &self,
-        transaction: common::transaction::LeeTransaction,
-    ) -> Result<()> {
-        use sequencer_executor_actor::protocol::{Transaction, TransactionOrigin};
-        self.executor
-            .actor_ref()
-            .ask(Transaction {
-                transaction,
-                origin: TransactionOrigin::User,
-            })
-            .await
-            .context("Failed to submit the system_upgrader transaction")
-    }
-
     /// Wait for any of the sequencer tasks to fail and return the error.
     ///
     /// Gossip is deliberately not watched here: if it goes down the node

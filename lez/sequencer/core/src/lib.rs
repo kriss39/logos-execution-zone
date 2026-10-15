@@ -1753,7 +1753,8 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
         // record behind it and so needs no requeue, where the origin only says
         // it was not submitted by a user.
         let mut mempool_transactions = Vec::new();
-        // `system_upgrader` transactions handed to the node wait for the one slot before the fee.
+        // `system_upgrader` changes in the mempool, returned by a reorg, wait for the one slot
+        // before the fee.
         let mut upgrade_candidates = Vec::new();
         let mut pending_from_store = pending_deposits;
         pending_from_store.extend(pending_dispatches);
@@ -1917,8 +1918,8 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
         }
 
         // At most one `system_upgrader` transaction, directly before the fee: the due `Apply`
-        // first, then changes a threshold of collected approvals carries, then approved changes
-        // handed to the node, the first that fits and applies. Untried handed changes go back to
+        // first, then changes a threshold of collected approvals carries, then approved changes a
+        // reorg returned, the first that fits and applies. Untried returned changes go back to
         // the mempool.
         let approved = committee_discovery::read_config(&working_state)
             .map(|committee| self.system_approvals.ready(&committee, new_block_height))
