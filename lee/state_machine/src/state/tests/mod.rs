@@ -18,9 +18,10 @@ use lee_core::{
     },
     program::{
         BlockValidityWindow, MessageEnvelope, PROGRAM_LOADER_ACCOUNT_ID, PdaSeed, ProgramEvent,
-        ProgramId, ProgramSegment, SyncMessage, TimestampValidityWindow, TransactionEvent,
+        ProgramId, SyncMessage, TimestampValidityWindow, TransactionEvent,
     },
 };
+use program_loader_core::{LoaderActorState as _, ProgramSegment};
 use test_guest_core::{ForgeField, Script};
 
 pub use crate::test_utils::{TestPrivateKeys, init_witness, no_seal, update_witness};

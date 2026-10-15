@@ -446,8 +446,9 @@ fn a_send_to_an_undeclared_actor_from_a_later_transition_is_charged() {
 fn loader_write_fixture(next_len: usize) -> (V03State, crate::PublicTransaction, u64) {
     use lee_core::{
         account::{Account, ActorState},
-        program::{PROGRAM_LOADER_ACCOUNT_ID, ProgramSegment},
+        program::PROGRAM_LOADER_ACCOUNT_ID,
     };
+    use program_loader_core::{LoaderActorState as _, ProgramSegment};
 
     let next = AccountId::new([9; 32]);
     let next_state = ProgramSegment {

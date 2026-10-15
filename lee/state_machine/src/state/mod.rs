@@ -7,9 +7,10 @@ use lee_core::{
     account::{Account, AccountId, ActorState},
     program::{
         MessageBody, PROGRAM_LOADER_ACCOUNT_ID, ProgramHeader, ProgramId, Publication,
-        TransactionEvent, get_program_via, immutable_mirror_commitment,
+        TransactionEvent, immutable_mirror_commitment,
     },
 };
+use program_loader_core::{LoaderActorState as _, get_program_via};
 use rpds::{HashTrieMapSync, HashTrieSetSync, RedBlackTreeMapSync, RedBlackTreeSetSync};
 
 use crate::{
