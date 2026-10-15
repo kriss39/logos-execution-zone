@@ -10,3 +10,5 @@ workspace = true
 [dependencies]
 lee_core.workspace = true
 borsh.workspace = true
+sha2.workspace = true
+sequencer_stake_core.workspace = true

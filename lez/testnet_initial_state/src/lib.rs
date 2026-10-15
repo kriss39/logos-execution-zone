@@ -186,6 +186,15 @@ fn initial_public_accounts() -> HashMap<AccountId, Account> {
         .collect()
 }
 
+/// System programs changed only by a protocol upgrade: `system_upgrader`, the root of system
+/// program upgrades.
+fn protocol_upgradable_programs() -> Vec<(AccountId, Program)> {
+    vec![(
+        programs::system_upgrader_account_id(),
+        programs::system_upgrader(),
+    )]
+}
+
 /// System programs, owned by `system_upgrader` and upgradable through it, by name.
 fn system_upgradable_programs(cross_zone: bool) -> Vec<(SystemProgramName, Program)> {
     let mut programs = vec![
@@ -243,11 +252,12 @@ pub fn initial_state(cross_zone: bool) -> V03State {
         .with_public_accounts([system_registry(cross_zone)])
         .with_recovery_bindings(initial_recovery_bindings())
         .with_programs_at(
-            system_upgradable_programs(cross_zone)
+            protocol_upgradable_programs()
                 .into_iter()
-                .map(|(name, program)| {
-                    (AccountId::from_system_program_name(&name), program, false)
-                }),
+                .map(|(account_id, program)| (account_id, program, false))
+                .chain(system_upgradable_programs(cross_zone).into_iter().map(
+                    |(name, program)| (AccountId::from_system_program_name(&name), program, false),
+                )),
         )
         .build()
 }

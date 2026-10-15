@@ -49,6 +49,7 @@ members = [
   "lez/common",
   "lez/programs",
   "lez/programs/bridge",
+  "lez/programs/system_upgrader",
   "lez/programs/system_upgrader/core",
   "lez/programs/clock",
   "lez/programs/fee",
