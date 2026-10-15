@@ -25,7 +25,8 @@ use crate::{
         GetAccountView, GetBlock, GetBlockRange, GetChannelId, GetCrossZoneDeadLetters,
         GetCrossZoneDeadLettersReply, GetFeeQuote, GetLastBlockId, GetMessagePath,
         GetProofsAndRoot, GetPublications, GetRecoveryBinding, GetTransaction, ProduceBlock,
-        ProofsAndRoot, RequeueCrossZoneDeadLetter, RequeueCrossZoneDeadLetterReply, Transaction,
+        ProofsAndRoot, RequeueCrossZoneDeadLetter, RequeueCrossZoneDeadLetterReply,
+        SubmitSystemApproval, Transaction,
     },
 };
 
@@ -132,6 +133,12 @@ mockall::mock! {
             msg: RequeueCrossZoneDeadLetter,
             ctx: &mut Context<Self, Result<RequeueCrossZoneDeadLetterReply>>
         ) -> Result<RequeueCrossZoneDeadLetterReply>;
+
+        pub fn handle_submit_system_approval(
+            &mut self,
+            msg: SubmitSystemApproval,
+            ctx: &mut Context<Self, Result<()>>
+        ) -> Result<()>;
 
         pub fn handle_get_fee_quote(
             &mut self,
@@ -374,6 +381,18 @@ impl Message<RequeueCrossZoneDeadLetter> for MockExecutorActor {
         ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         self.handle_requeue_cross_zone_dead_letter(msg, ctx)
+    }
+}
+
+impl Message<SubmitSystemApproval> for MockExecutorActor {
+    type Reply = Result<()>;
+
+    async fn handle(
+        &mut self,
+        msg: SubmitSystemApproval,
+        ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.handle_submit_system_approval(msg, ctx)
     }
 }
 

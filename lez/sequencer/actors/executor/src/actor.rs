@@ -36,7 +36,7 @@ use crate::{
         GetChannelId, GetCrossZoneDeadLetters, GetCrossZoneDeadLettersReply, GetFeeQuote,
         GetLastBlockId, GetMessagePath, GetProofsAndRoot, GetPublications, GetRecoveryBinding,
         GetTransaction, ProduceBlock, RequeueCrossZoneDeadLetter, RequeueCrossZoneDeadLetterReply,
-        Transaction,
+        SubmitSystemApproval, Transaction,
     },
 };
 
@@ -559,6 +559,23 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> Message<RequeueCrossZoneDeadLet
             .await
             .map_err(Error::CrossZoneDeadLetterRequeueFailed)?;
         Ok(RequeueCrossZoneDeadLetterReply { outcome })
+    }
+}
+
+impl<S: StorageActorTrait, B: BedrockActorTrait> Message<SubmitSystemApproval>
+    for ExecutorActor<S, B>
+{
+    type Reply = Result<()>;
+
+    async fn handle(
+        &mut self,
+        SubmitSystemApproval { approval }: SubmitSystemApproval,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.sequencer
+            .submit_system_approval(approval)
+            .await
+            .map_err(Error::SystemApprovalRefused)
     }
 }
 

@@ -75,6 +75,7 @@ mod faults;
 pub mod fees;
 pub mod gossip;
 pub mod logging;
+pub mod system_approvals;
 pub mod task_group;
 
 /// Failed production attempts before a cross-zone dispatch is given up on.
@@ -227,6 +228,8 @@ pub struct SequencerCore<S: StorageActorTrait, B: BedrockActorTrait> {
     finalized_config: MsgId,
     /// Channel sequence of the last thing `BedrockActor` handed us.
     applied_seq: Option<sequencer_bedrock_actor::protocol::ChannelSeq>,
+    /// Committee approvals of `system_upgrader` changes, until a threshold builds one.
+    system_approvals: system_approvals::SystemApprovals,
 }
 
 /// A funded channel config, from the moment zone-sdk funds it to the moment it
@@ -576,6 +579,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
             config_draft: None,
             finalized_config,
             applied_seq: None,
+            system_approvals: system_approvals::SystemApprovals::default(),
         };
 
         sequencer_core_metrics::record_chain_height(sequencer_core.chain_height().await);
@@ -1899,14 +1903,23 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
         }
 
         // At most one `system_upgrader` transaction, directly before the fee: the due `Apply`
-        // first, then approved changes handed to the node, the first that fits and applies.
-        // Untried changes go back to the mempool.
+        // first, then changes a threshold of collected approvals carries, then approved changes
+        // handed to the node, the first that fits and applies. Untried handed changes go back to
+        // the mempool.
+        let approved = committee_discovery::read_config(&working_state)
+            .map(|committee| self.system_approvals.ready(&committee, new_block_height))
+            .unwrap_or_default();
         let mut candidates = due_apply
             .into_iter()
-            .map(|tx| (TransactionOrigin::Sequencer, tx))
-            .chain(upgrade_candidates)
+            .map(|tx| (TransactionOrigin::Sequencer, tx, None))
+            .chain(build_approved_txs(approved))
+            .chain(
+                upgrade_candidates
+                    .into_iter()
+                    .map(|(origin, tx)| (origin, tx, None)),
+            )
             .collect::<VecDeque<_>>();
-        while let Some((origin, tx)) = candidates.pop_front() {
+        while let Some((origin, tx, proposal)) = candidates.pop_front() {
             let block_size = borsh::to_vec(&HashableBlockData {
                 block_id: new_block_height,
                 transactions: [
@@ -1951,8 +1964,14 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
                 break;
             }
             warn!("system_upgrader transaction {} failed to apply", tx.hash());
+            // An approved change that no longer applies (already carried out, or invalid) is
+            // dropped; one that applied stays until a later attempt finds it done, so an orphaned
+            // block doesn't lose it.
+            if let Some(proposal) = proposal {
+                self.system_approvals.remove(&proposal);
+            }
         }
-        for (origin, tx) in candidates {
+        for (origin, tx, _) in candidates {
             if !matches!(origin, TransactionOrigin::Sequencer) {
                 self.mempool.push_front((origin, tx));
             }
@@ -2016,6 +2035,24 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
     #[must_use]
     pub const fn storage_ref(&self) -> &ActorRef<S> {
         &self.storage_ref
+    }
+
+    /// Verifies a committee member's approval of a `system_upgrader` change against the head's
+    /// committee, and keeps it until a threshold of approvals lets the producer build the change.
+    pub async fn submit_system_approval(
+        &mut self,
+        signed: system_upgrader_core::SignedApproval,
+    ) -> Result<()> {
+        let (committee, next_block) = {
+            let chain = self.chain.lock().await;
+            let committee = committee_discovery::read_config(chain.head_state())
+                .context("the head state has no committee config")?;
+            let next_block = chain
+                .head_tip()
+                .map_or(GENESIS_BLOCK_ID, |tip| tip.block_id.saturating_add(1));
+            (committee, next_block)
+        };
+        self.system_approvals.add(signed, &committee, next_block)
     }
 
     pub async fn chain_height(&self) -> u64 {
@@ -3001,13 +3038,10 @@ fn build_due_apply_tx(
     block_id: lee_core::BlockId,
 ) -> Option<LeeTransaction> {
     let name = common::system_upgrades::due_at(state, block_id)?;
-    system_upgrader_tx(
-        [system_upgrader_core::loader_actor(&name)],
-        system_upgrader_core::Message::Apply {
-            name,
-            activation_height: block_id,
-        },
-    )
+    system_upgrader_tx(system_upgrader_core::Message::Apply {
+        name,
+        activation_height: block_id,
+    })
     .map_err(|err| {
         error!(
             "Failed to build the due Apply of system program {}: {err:#}",
@@ -3017,16 +3051,34 @@ fn build_due_apply_tx(
     .ok()
 }
 
-/// An unsigned, fee-exempt `system_upgrader` transaction to its registry, also declaring
-/// `actors`.
-fn system_upgrader_tx(
-    actors: impl IntoIterator<Item = Actor>,
-    message: system_upgrader_core::Message,
-) -> Result<LeeTransaction> {
-    let registry = system_upgrader_core::registry_actor();
+/// The `Schedule`, `Cancel` or `Install` carrying out each approved proposal, with the proposal.
+fn build_approved_txs(
+    approved: Vec<(
+        system_upgrader_core::Proposal,
+        Vec<system_upgrader_core::Approval>,
+    )>,
+) -> Vec<(
+    TransactionOrigin,
+    LeeTransaction,
+    Option<system_upgrader_core::Proposal>,
+)> {
+    approved
+        .into_iter()
+        .filter_map(|(proposal, approvals)| {
+            system_upgrader_tx(system_upgrader_core::Message::approved(proposal, approvals))
+                .map_err(|err| warn!("Skipping an approved system_upgrader change: {err:#}"))
+                .ok()
+                .map(|tx| (TransactionOrigin::Sequencer, tx, Some(proposal)))
+        })
+        .collect()
+}
+
+/// An unsigned, fee-exempt `system_upgrader` transaction to its registry, declaring the actors
+/// its message reaches.
+fn system_upgrader_tx(message: system_upgrader_core::Message) -> Result<LeeTransaction> {
     let message = Message::try_new(
-        registry,
-        std::iter::once(registry).chain(actors),
+        system_upgrader_core::registry_actor(),
+        message.actors(),
         BTreeMap::new(),
         message,
     )
