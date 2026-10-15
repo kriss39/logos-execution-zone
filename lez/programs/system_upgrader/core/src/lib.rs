@@ -39,6 +39,13 @@ pub enum Message {
         name: SystemProgramName,
         activation_height: BlockId,
     },
+    /// Clears `name`'s pending upgrade, before its activation height, if it is exactly this one.
+    Cancel {
+        name: SystemProgramName,
+        first_segment: AccountId,
+        activation_height: BlockId,
+        approvals: Vec<Approval>,
+    },
 }
 
 impl Message {
@@ -61,6 +68,19 @@ impl Message {
                 },
                 approvals,
             )),
+            Self::Cancel {
+                name,
+                first_segment,
+                activation_height,
+                approvals,
+            } => Some((
+                Proposal::Cancel {
+                    name: *name,
+                    first_segment: *first_segment,
+                    activation_height: *activation_height,
+                },
+                approvals,
+            )),
             Self::Apply { .. } => None,
         }
     }
@@ -74,6 +94,11 @@ pub enum Proposal {
         name: SystemProgramName,
         first_segment: AccountId,
         image_id: ProgramId,
+        activation_height: BlockId,
+    },
+    Cancel {
+        name: SystemProgramName,
+        first_segment: AccountId,
         activation_height: BlockId,
     },
 }

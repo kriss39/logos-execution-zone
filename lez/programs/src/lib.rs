@@ -372,6 +372,23 @@ mod inner {
                 )
             }
 
+            fn cancel_tx(first_segment: AccountId) -> PublicTransaction {
+                let proposal = Proposal::Cancel {
+                    name: CLOCK_NAME,
+                    first_segment,
+                    activation_height: ACTIVATION_HEIGHT,
+                };
+                system_upgrader_tx(
+                    &[committee_actor()],
+                    &Message::Cancel {
+                        name: CLOCK_NAME,
+                        first_segment,
+                        activation_height: ACTIVATION_HEIGHT,
+                        approvals: approvals_for(&proposal, &[1, 2], VALID_UNTIL),
+                    },
+                )
+            }
+
             fn registry(state: &V03State) -> Registry {
                 Registry::from_bytes(
                     state
@@ -535,6 +552,55 @@ mod inner {
             }
 
             #[test]
+            fn a_cancelled_upgrade_never_applies_and_frees_the_system_program() {
+                let (mut state, ids) = staged();
+                state
+                    .transition_from_public_transaction(&schedule_tx(ids[0]), 1, 0)
+                    .unwrap();
+
+                state
+                    .transition_from_public_transaction(&cancel_tx(ids[0]), 2, 0)
+                    .expect("the pending upgrade is cancelled");
+                assert_eq!(schedule(&state), None);
+
+                state
+                    .transition_from_public_transaction(
+                        &apply_tx(ACTIVATION_HEIGHT),
+                        ACTIVATION_HEIGHT,
+                        0,
+                    )
+                    .expect_err("a cancelled upgrade can't apply");
+                assert_eq!(
+                    state.get_program_image_id(clock_account_id()),
+                    Some(clock().id())
+                );
+
+                state
+                    .transition_from_public_transaction(&schedule_tx_at(ids[0], 9), 3, 0)
+                    .expect("the system program can be scheduled again");
+            }
+
+            #[test]
+            fn an_upgrade_can_be_cancelled_only_before_its_height() {
+                let (mut state, ids) = staged();
+                state
+                    .transition_from_public_transaction(&schedule_tx(ids[0]), 1, 0)
+                    .unwrap();
+
+                state
+                    .transition_from_public_transaction(&cancel_tx(ids[0]), ACTIVATION_HEIGHT, 0)
+                    .expect_err("the upgrade's own block must carry its Apply");
+                state
+                    .transition_from_public_transaction(
+                        &cancel_tx(ids[0]),
+                        ACTIVATION_HEIGHT - 1,
+                        0,
+                    )
+                    .expect("cancelling is valid before its height");
+                assert_eq!(schedule(&state), None);
+            }
+
+            #[test]
             fn an_upgrade_applies_only_at_its_height() {
                 let (mut state, ids) = staged();
                 state
@@ -642,6 +708,26 @@ mod inner {
                 assert_eq!(schedule(&state), None);
             }
 
+            /// Its staging header already holds the cancelled proposal's chain.
+            #[test]
+            fn rescheduling_a_cancelled_upgrade_unchanged_is_refused() {
+                let (mut state, ids) = staged();
+                state
+                    .transition_from_public_transaction(&schedule_tx(ids[0]), 1, 0)
+                    .unwrap();
+                state
+                    .transition_from_public_transaction(&cancel_tx(ids[0]), 2, 0)
+                    .unwrap();
+
+                let err = state
+                    .transition_from_public_transaction(&schedule_tx(ids[0]), 3, 0)
+                    .expect_err("the staging header is taken");
+                assert!(
+                    err.to_string().contains("header target already deployed"),
+                    "got: {err}"
+                );
+            }
+
             #[test]
             fn scheduling_validates_the_chain_into_a_staging_header() {
                 let (mut state, ids) = staged();
@@ -654,6 +740,37 @@ mod inner {
                     state.get_program_image_id(staging.account_id),
                     Some(ping_receiver().id())
                 );
+            }
+
+            #[test]
+            fn cancelling_a_different_upgrade_is_refused() {
+                let (mut state, ids) = staged();
+                state
+                    .transition_from_public_transaction(&schedule_tx(ids[0]), 1, 0)
+                    .unwrap();
+
+                let err = state
+                    .transition_from_public_transaction(
+                        &cancel_tx(AccountId::new([0x77; 32])),
+                        2,
+                        0,
+                    )
+                    .expect_err("only the pending upgrade can be cancelled");
+                assert!(
+                    err.to_string()
+                        .contains("the upgrade does not match the system program's schedule"),
+                    "got: {err}"
+                );
+                assert!(schedule(&state).is_some(), "the pending upgrade is kept");
+            }
+
+            #[test]
+            fn cancelling_with_nothing_scheduled_is_refused() {
+                let (mut state, ids) = staged();
+
+                state
+                    .transition_from_public_transaction(&cancel_tx(ids[0]), 1, 0)
+                    .expect_err("there is nothing to cancel");
             }
 
             #[test]
@@ -770,6 +887,21 @@ mod inner {
                     approvals_for(&schedule_proposal(CLOCK_NAME, ids[0]), &[1, 1], VALID_UNTIL),
                     1,
                     "the same key approved twice",
+                );
+            }
+
+            #[test]
+            fn an_approval_for_another_action_is_refused() {
+                let (_, ids) = staged();
+                let cancel = Proposal::Cancel {
+                    name: CLOCK_NAME,
+                    first_segment: ids[0],
+                    activation_height: ACTIVATION_HEIGHT,
+                };
+                refused_schedule(
+                    approvals_for(&cancel, &[1, 2], VALID_UNTIL),
+                    1,
+                    "should verify against its signer",
                 );
             }
 
