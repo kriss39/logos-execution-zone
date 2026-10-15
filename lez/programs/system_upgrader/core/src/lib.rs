@@ -202,6 +202,15 @@ impl Proposal {
     pub fn to_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("a proposal serializes")
     }
+
+    /// SHA-256 of [`Proposal::to_bytes`]: committee members who compare it have signed the same
+    /// proposal, byte for byte.
+    #[must_use]
+    pub fn hash(&self) -> [u8; 32] {
+        use sha2::{Digest as _, Sha256};
+
+        Sha256::digest(self.to_bytes()).into()
+    }
 }
 
 /// A pending upgrade, stored in the [`Registry`] under the system program's name.
@@ -403,6 +412,27 @@ mod tests {
         let approvals = vec![approval_of(&proposal(), CHANNEL_ID)];
         let message = Message::approved(proposal(), approvals.clone());
         assert_eq!(message.proposal(), Some((proposal(), approvals.as_slice())));
+    }
+
+    #[test]
+    fn a_proposal_hash_tells_proposals_apart() {
+        let Proposal::Schedule {
+            name,
+            first_segment,
+            image_id,
+            activation_height,
+        } = proposal()
+        else {
+            unreachable!();
+        };
+        let later = Proposal::Schedule {
+            name,
+            first_segment,
+            image_id,
+            activation_height: activation_height + 1,
+        };
+        assert_eq!(proposal().hash(), proposal().hash());
+        assert_ne!(proposal().hash(), later.hash());
     }
 
     #[test]

@@ -116,6 +116,13 @@ impl SystemApprovals {
             .collect()
     }
 
+    /// Every proposal held, with the approvals held of it.
+    pub fn proposals(&self) -> impl Iterator<Item = (&Proposal, impl Iterator<Item = &Approval>)> {
+        self.by_proposal
+            .iter()
+            .map(|(proposal, approvals)| (proposal, approvals.values()))
+    }
+
     /// Forgets `proposal`, once its change no longer applies.
     pub fn remove(&mut self, proposal: &Proposal) {
         self.changed |= self.by_proposal.remove(proposal).is_some();

@@ -143,6 +143,21 @@ async fn an_approved_system_upgrade_goes_live_at_its_height() -> Result<()> {
             .submit_system_approval(hex::encode(borsh::to_vec(&signed)?))
             .await?;
     }
+    // Gossip carries both to the other sequencer, which lists the proposal with its hash.
+    let (channel_id, _) = ctx.zones_iter().next().context("the test has a zone")?;
+    let other = ctx
+        .sequencer_components_iter(*channel_id)
+        .context("the zone has sequencers")?
+        .nth(1)
+        .context("the zone has a second sequencer")?;
+    wait_until("the other sequencer to hold both approvals", || async {
+        let report = other.sequencer_client.get_system_proposals().await?;
+        Ok(report
+            .proposals
+            .iter()
+            .any(|held| held.proposal_hash.0 == proposal.hash() && held.approvals.len() == 2))
+    })
+    .await?;
     // Read before the height, so a chain still short of it after the read was short during it.
     let image_before = image_id(&ctx, bridge).await?;
     if ctx.sequencer_client().get_last_block_id().await? < activation_height {

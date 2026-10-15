@@ -2073,6 +2073,30 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
         self.persist_system_approvals().await
     }
 
+    /// The approvals the head's committee must reach for a change, and every proposal held with
+    /// its approvals.
+    pub async fn system_proposals(
+        &self,
+    ) -> Result<(
+        usize,
+        Vec<(
+            system_upgrader_core::Proposal,
+            Vec<system_upgrader_core::Approval>,
+        )>,
+    )> {
+        let committee = committee_discovery::read_config(self.chain.lock().await.head_state())
+            .context("the head state has no committee config")?;
+        let threshold = sequencer_stake_core::slash_approval_threshold(
+            committee.accredited_committee_members_count(),
+        );
+        let proposals = self
+            .system_approvals
+            .proposals()
+            .map(|(proposal, approvals)| (*proposal, approvals.cloned().collect()))
+            .collect();
+        Ok((threshold, proposals))
+    }
+
     /// Writes the approval pool to storage if it changed, so a restart keeps it.
     async fn persist_system_approvals(&mut self) -> Result<()> {
         if self.system_approvals.take_changed() {

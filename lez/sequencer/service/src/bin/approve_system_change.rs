@@ -2,7 +2,8 @@
 //!
 //! Reads `<home>/bedrock_signing_key` (the node's sequencer key) and the zone's channel id from the
 //! given sequencer config, and prints the signed approval as hex-encoded borsh, ready to submit to
-//! the nodes. Never touches the network, and never creates a key.
+//! the nodes, and the proposal's hash on stderr, for committee members to compare. Never touches
+//! the network, and never creates a key.
 //!
 //! A `Schedule` must land before its activation height, so its height must lead the chain's tip
 //! (`--tip`) by at least `--min-lead` blocks; one that misses it must be signed again at a new
@@ -178,7 +179,9 @@ fn valid_until(
 
 #[expect(
     clippy::print_stdout,
-    reason = "the signed approval on stdout is this binary's output"
+    clippy::print_stderr,
+    reason = "the signed approval on stdout is this binary's output, the proposal hash on stderr \
+              is for its operator"
 )]
 fn main() -> Result<()> {
     let Args {
@@ -208,6 +211,7 @@ fn main() -> Result<()> {
             signature: key.sign_payload(&message).to_bytes().to_vec(),
         },
     };
+    eprintln!("proposal {}", hex::encode(signed.proposal.hash()));
     println!("{}", hex::encode(borsh::to_vec(&signed)?));
 
     Ok(())

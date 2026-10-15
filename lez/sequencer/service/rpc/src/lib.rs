@@ -8,7 +8,7 @@ use sequencer_service_protocol::{
     Account, AccountId, Actor, Block, BlockId, ChannelId, Commitment, CommitmentPosition,
     CommitmentSetDigest, CrossZoneDeadLetterReport, CrossZoneDeadLetterRequeue, EncryptedNote,
     FeeStateQuote, HashType, LeeTransaction, MembershipProof, Nonce, PageLimit, ProgramId,
-    Publication,
+    Publication, SystemProposalReport,
 };
 
 #[cfg(all(not(feature = "server"), not(feature = "client")))]
@@ -162,4 +162,7 @@ pub trait Rpc {
     /// borsh `SignedApproval`, as `approve_system_change` prints it.
     #[method(name = "submitSystemApproval")]
     async fn submit_system_approval(&self, approval: String) -> Result<(), ErrorObjectOwned>;
+
+    #[method(name = "getSystemProposals")]
+    async fn get_system_proposals(&self) -> Result<SystemProposalReport, ErrorObjectOwned>;
 }

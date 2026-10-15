@@ -35,8 +35,9 @@ use crate::{
         GetAccountTransactions, GetAccountView, GetBlock, GetBlockByHash, GetBlockRange,
         GetChannelId, GetCrossZoneDeadLetters, GetCrossZoneDeadLettersReply, GetFeeQuote,
         GetLastBlockId, GetMessagePath, GetProofsAndRoot, GetPublications, GetRecoveryBinding,
-        GetTransaction, ProduceBlock, RequeueCrossZoneDeadLetter, RequeueCrossZoneDeadLetterReply,
-        SubmitSystemApproval, Transaction,
+        GetSystemProposals, GetSystemProposalsReply, GetTransaction, ProduceBlock,
+        RequeueCrossZoneDeadLetter, RequeueCrossZoneDeadLetterReply, SubmitSystemApproval,
+        Transaction,
     },
 };
 
@@ -559,6 +560,28 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> Message<RequeueCrossZoneDeadLet
             .await
             .map_err(Error::CrossZoneDeadLetterRequeueFailed)?;
         Ok(RequeueCrossZoneDeadLetterReply { outcome })
+    }
+}
+
+impl<S: StorageActorTrait, B: BedrockActorTrait> Message<GetSystemProposals>
+    for ExecutorActor<S, B>
+{
+    type Reply = Result<GetSystemProposalsReply>;
+
+    async fn handle(
+        &mut self,
+        GetSystemProposals: GetSystemProposals,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        let (threshold, proposals) = self
+            .sequencer
+            .system_proposals()
+            .await
+            .map_err(Error::SystemProposalsUnavailable)?;
+        Ok(GetSystemProposalsReply {
+            threshold,
+            proposals,
+        })
     }
 }
 

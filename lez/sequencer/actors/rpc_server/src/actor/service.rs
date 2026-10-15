@@ -17,7 +17,8 @@ use sequencer_service_protocol::{
     Account, AccountId, Actor, Block, BlockId, ChannelId, Commitment, CommitmentPosition,
     CommitmentSetDigest, CrossZoneDeadLetter, CrossZoneDeadLetterReport,
     CrossZoneDeadLetterRequeue, EncryptedNote, FeeStateQuote, HashType, MembershipProof, Nonce,
-    PageLimit, ProgramId, Publication,
+    PageLimit, ProgramId, Publication, SystemProposal, SystemProposalApproval,
+    SystemProposalReport,
 };
 
 pub struct Service<E: ExecutorActorTrait> {
@@ -352,6 +353,35 @@ impl<E: ExecutorActorTrait> sequencer_service_rpc::RpcServer for Service<E> {
         })
     }
 
+    async fn get_system_proposals(&self) -> Result<SystemProposalReport, ErrorObjectOwned> {
+        let sequencer_executor_actor::protocol::GetSystemProposalsReply {
+            threshold,
+            proposals,
+        } = self
+            .executor_ref
+            .ask(sequencer_executor_actor::protocol::GetSystemProposals)
+            .await
+            .map_err(map_executor_error)?;
+
+        Ok(SystemProposalReport {
+            threshold: u32::try_from(threshold).unwrap_or(u32::MAX),
+            proposals: proposals
+                .into_iter()
+                .map(|(proposal, approvals)| SystemProposal {
+                    proposal_hash: HashType(proposal.hash()),
+                    proposal: hex::encode(proposal.to_bytes()),
+                    approvals: approvals
+                        .into_iter()
+                        .map(|approval| SystemProposalApproval {
+                            signer: hex::encode(approval.signer.to_bytes()),
+                            valid_until: approval.valid_until,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        })
+    }
+
     async fn submit_system_approval(&self, approval: String) -> Result<(), ErrorObjectOwned> {
         let invalid = |message: String| {
             ErrorObjectOwned::owned(ErrorCode::InvalidParams.code(), message, None::<()>)
@@ -427,6 +457,7 @@ fn map_executor_error<M>(
             | sequencer_executor_actor::error::Error::BedrockRequestFailed(_)
             | sequencer_executor_actor::error::Error::CrossZoneDeadLettersUnavailable(_)
             | sequencer_executor_actor::error::Error::CrossZoneDeadLetterRequeueFailed(_)
+            | sequencer_executor_actor::error::Error::SystemProposalsUnavailable(_)
             | sequencer_executor_actor::error::Error::SequencerStartFailed(_)) => {
                 internal_error(handle_err)
             }
