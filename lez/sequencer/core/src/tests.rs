@@ -314,11 +314,14 @@ fn setup_sequencer_config() -> SequencerConfig {
 }
 
 #[test]
-fn only_the_cross_zone_inbox_and_fee_are_sequencer_only() {
+fn only_the_cross_zone_inbox_fee_and_system_upgrader_are_sequencer_only() {
     assert!(is_sequencer_only_program(
         programs::cross_zone_inbox_account_id()
     ));
     assert!(is_sequencer_only_program(programs::fee_account_id()));
+    assert!(is_sequencer_only_program(
+        programs::system_upgrader_account_id()
+    ));
     assert!(!is_sequencer_only_program(
         programs::cross_zone_outbox_account_id()
     ));

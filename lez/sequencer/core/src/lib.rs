@@ -2802,11 +2802,13 @@ fn bridge_lock_holdings(
 /// The cross-zone inbox is injected solely by the watcher; a user-submitted call
 /// must be rejected at ingress, since `TransactionOrigin` is not carried in the
 /// block. The fee program is invoked solely by the forced per-block fee
-/// transaction.
+/// transaction. Every `system_upgrader` transaction is built or admitted by the
+/// producer.
 #[must_use]
 pub fn is_sequencer_only_program(program_account_id: AccountId) -> bool {
     cross_zone::is_sequencer_only_program(program_account_id)
         || program_account_id == programs::fee_account_id()
+        || program_account_id == system_upgrader_core::SYSTEM_UPGRADER_ACCOUNT_ID
 }
 
 /// Op id of the `index`-th genesis allocation.
