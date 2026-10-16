@@ -513,3 +513,39 @@ fn loader_entry_decoders_reject_the_other_variant() {
     );
     assert_eq!(ProgramHeader::from_loader_actor_state(&segment_bytes), None);
 }
+
+/// `system_upgrader` changes only by protocol upgrade and encodes `UpdateHeader` (for `Apply`) and
+/// `CreateHeaderOf` (for `Schedule` and `Install`) itself, so these encodings are fixed for as long
+/// as it is deployed.
+#[test]
+fn system_upgrader_loader_message_encodings_are_pinned() {
+    let first_segment = AccountId::new([9; 32]);
+
+    let mut update = vec![2];
+    update.extend_from_slice(first_segment.value());
+    update.push(0);
+    assert_eq!(
+        borsh::to_vec(&Message::UpdateHeader {
+            first_segment,
+            immutable: false,
+        })
+        .unwrap(),
+        update
+    );
+
+    let mut create_of = vec![3];
+    create_of.extend_from_slice(first_segment.value());
+    for word in [1_u32, 2, 3, 4, 5, 6, 7, 8] {
+        create_of.extend_from_slice(&word.to_le_bytes());
+    }
+    create_of.push(0);
+    assert_eq!(
+        borsh::to_vec(&Message::CreateHeaderOf {
+            first_segment,
+            image_id: [1, 2, 3, 4, 5, 6, 7, 8],
+            immutable: false,
+        })
+        .unwrap(),
+        create_of
+    );
+}

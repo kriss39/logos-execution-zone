@@ -44,6 +44,12 @@ pub enum Message {
         first_segment: AccountId,
         immutable: bool,
     },
+    /// [`Message::CreateHeader`], refused unless the chain's image ID is `image_id`.
+    CreateHeaderOf {
+        first_segment: AccountId,
+        image_id: ProgramId,
+        immutable: bool,
+    },
 }
 
 /// One link in a program's bytecode chain: a chunk of the ELF plus where the next chunk lives,
@@ -222,7 +228,25 @@ pub fn handle_message<'state>(
                 input.is_authorized,
                 "CreateHeader target must be an authorized account"
             );
-            header_write(input, first_segment, immutable, &actor_state)
+            header_write(input, first_segment, immutable, None, &actor_state)
+        }
+        Message::CreateHeaderOf {
+            first_segment,
+            image_id,
+            immutable,
+        } => {
+            assert!(input.pre_state.is_empty(), "header target already deployed");
+            assert!(
+                input.is_authorized,
+                "CreateHeaderOf target must be an authorized account"
+            );
+            header_write(
+                input,
+                first_segment,
+                immutable,
+                Some(image_id),
+                &actor_state,
+            )
         }
         Message::UpdateHeader {
             first_segment,
@@ -239,7 +263,7 @@ pub fn handle_message<'state>(
                 input.is_authorized,
                 "UpdateHeader target must be authorized by the signer"
             );
-            header_write(input, first_segment, immutable, &actor_state)
+            header_write(input, first_segment, immutable, None, &actor_state)
         }
     };
 
@@ -266,9 +290,16 @@ fn header_write<'state>(
     input: &ReceiveInput,
     first_segment: AccountId,
     immutable: bool,
+    expected_image_id: Option<ProgramId>,
     actor_state: impl Fn(AccountId) -> &'state ActorState,
 ) -> (Vec<u8>, Option<Commitment>) {
     let header = build_header(first_segment, immutable, actor_state);
+    if let Some(expected) = expected_image_id {
+        assert_eq!(
+            header.image_id, expected,
+            "the chain's image ID is not the expected one"
+        );
+    }
     let new_commitment =
         immutable.then(|| immutable_mirror_commitment(input.receiver.account_id, &header));
     (header.to_loader_actor_state(), new_commitment)
