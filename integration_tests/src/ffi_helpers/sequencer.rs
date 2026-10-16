@@ -26,7 +26,7 @@ use core_ffi::{
         api::{lifecycle::InitializedSequencerServiceFFIResult, query::LastBlockIdResult},
     },
 };
-use lee::{AccountId, PrivateKey, PublicKey, program::Program};
+use lee::{Account, AccountId, PrivateKey, PublicAccountEvidence, PublicKey};
 use logos_blockchain_key_management_system_service::keys::{Ed25519Key, UnsecuredEd25519Key};
 use logos_blockchain_zone_sdk::{
     CommonHttpClient,
@@ -67,7 +67,7 @@ unsafe extern "C" {
     pub unsafe fn sequencer_ffi_query_account(
         sequencer: *const SequencerServiceFFI,
         account_id: FfiAccountId,
-    ) -> PointerResult<FfiOption<FfiAccount>, OperationStatus>;
+    ) -> PointerResult<FfiOption<FfiAccount>, FfiOperationError>;
 
     pub unsafe fn sequencer_ffi_query_block_vec(
         sequencer: *const SequencerServiceFFI,
@@ -157,7 +157,7 @@ pub fn queried_account(sequencer: &SequencerServiceFFI, account_id: AccountId) -
     assert!(res.error.is_ok(), "Failed to fetch account {account_id}");
     // SAFETY: the query returned a valid option, read and converted exactly once.
     let account: Option<FfiAccount> = unsafe { res.value.read() }.into();
-    account.map(|account| account.try_into().expect("Data must fit"))
+    account.map(|account| (&account).try_into().expect("Data must fit"))
 }
 
 /// Sets up blocking context with one leader node

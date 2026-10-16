@@ -5,6 +5,18 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+typedef enum FfiPublicAccountEvidenceKind {
+  FfiPublicAccountEvidenceKind_Key = 0,
+  FfiPublicAccountEvidenceKind_Pda,
+} FfiPublicAccountEvidenceKind;
+
+typedef enum FfiBoundaryStepKind {
+  FfiBoundaryStepKind_PrivateToPublic = 0,
+  FfiBoundaryStepKind_PublicToPrivate,
+  FfiBoundaryStepKind_EndPrivateSubtree,
+  FfiBoundaryStepKind_EndPublicSubtree,
+} FfiBoundaryStepKind;
+
 typedef enum FfiProgramImageClaimKind {
   FfiProgramImageClaimKind_Disclosed = 0,
   FfiProgramImageClaimKind_Undisclosed,
@@ -122,6 +134,10 @@ typedef enum FfiOperationError {
    */
   FfiOperationError_ResponseTooBig = 23,
   /**
+   * Message not found
+   */
+  FfiOperationError_MessageNotFound = 24,
+  /**
    * Internal error (catch-all).
    */
   FfiOperationError_InternalError = 99,
@@ -182,31 +198,23 @@ typedef struct FfiPrivateAccountKeys {
   FfiVecU8 viewing_public_key;
 } FfiPrivateAccountKeys;
 
-typedef struct FfiBytes32 FfiAccountId;
-
-typedef struct FfiVec_FfiAccountId {
-  FfiAccountId *entries;
-  uintptr_t len;
-  uintptr_t capacity;
-} FfiVec_FfiAccountId;
-
-typedef struct FfiVec_FfiVecU8 {
-  FfiVecU8 *entries;
-  uintptr_t len;
-  uintptr_t capacity;
-} FfiVec_FfiVecU8;
-
-typedef struct FfiAccountData {
+/**
+ * One program's actor state on an account.
+ */
+typedef struct FfiActorState {
   /**
-   * Account actor state keys.
+   * The program account ID.
    */
-  struct FfiVec_FfiAccountId account_data_keys;
+  struct FfiBytes32 program;
   /**
-   * Account actor state values (guaranteed to have same amount of entries as
-   * `account_data_keys`).
+   * Pointer to actor state data bytes.
    */
-  struct FfiVec_FfiVecU8 account_data_values;
-} FfiAccountData;
+  const uint8_t *data;
+  /**
+   * Length of actor state data.
+   */
+  uintptr_t data_len;
+} FfiActorState;
 
 /**
  * U128 - 16 bytes little endian.
@@ -218,14 +226,19 @@ typedef struct FfiU128 {
 /**
  * Account data structure - C-compatible version of lee Account.
  *
- * Note: `balance` and `nonce` are u128 values represented as little-endian
+ * Note: `nonce` is a u128 value represented as a little-endian
  * byte arrays since C doesn't have native u128 support.
  */
 typedef struct FfiAccount {
   /**
-   * Account data struct.
+   * Pointer to this account's actor states, ordered by program address. The native balance is
+   * the actor state of the native token program.
    */
-  struct FfiAccountData account_data;
+  const struct FfiActorState *actor_states;
+  /**
+   * Number of actor states.
+   */
+  uintptr_t actor_states_len;
   /**
    * Nonce as little-endian [u8; 16].
    */
@@ -250,20 +263,224 @@ typedef struct FfiBlockHeader {
   FfiTimestamp timestamp;
 } FfiBlockHeader;
 
+typedef struct FfiBytes32 FfiAccountId;
+
+/**
+ * Identifies one of an account's program actor states.
+ */
+typedef struct FfiActor {
+  FfiAccountId account_id;
+  FfiAccountId program_account_id;
+} FfiActor;
+
+typedef struct FfiVec_FfiActor {
+  struct FfiActor *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiActor;
+
+typedef struct FfiVec_FfiActor FfiActorList;
+
+typedef struct FfiVec_FfiAccountId {
+  FfiAccountId *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiAccountId;
+
+typedef struct FfiVec_FfiAccountId FfiAccountIdList;
+
+typedef struct FfiVec_u64 {
+  uint64_t *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_u64;
+
+typedef struct FfiVec_u64 FfiPromotionList;
+
+typedef struct FfiPublicExecutionContext {
+  FfiActorList actors;
+  FfiAccountIdList authorized_accounts;
+  FfiPromotionList promotions;
+} FfiPublicExecutionContext;
+
+typedef struct FfiVec_u8 FfiMessageDataList;
+
+/**
+ * How a proven transaction starts, as far as its proof discloses: a call to a public actor.
+ */
+typedef struct FfiRootCall {
+  struct FfiActor to;
+  FfiMessageDataList message;
+} FfiRootCall;
+
+/**
+ * Fee declaration of a public transaction. Held inline (not behind a
+ * pointer): a fee-exempt transaction carries `has_fee == false` and a zeroed
+ * declaration.
+ */
+typedef struct FfiFeeDeclaration {
+  FfiAccountId payer;
+  uint64_t gas_limit;
+  uint64_t tip;
+  struct FfiU128 max_fee;
+} FfiFeeDeclaration;
+
+typedef struct FfiU128 FfiNonce;
+
+/**
+ * One signer's replay nonce.
+ */
+typedef struct FfiNonceEntry {
+  FfiAccountId account_id;
+  FfiNonce nonce;
+} FfiNonceEntry;
+
+typedef struct FfiVec_FfiNonceEntry {
+  struct FfiNonceEntry *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiNonceEntry;
+
+typedef struct FfiVec_FfiNonceEntry FfiNonceList;
+
+typedef struct FfiBytes32 FfiPublicKey;
+
+typedef struct FfiPublicAccountEvidence {
+  enum FfiPublicAccountEvidenceKind kind;
+  FfiPublicKey key;
+  FfiAccountId program;
+  struct FfiBytes32 seed;
+} FfiPublicAccountEvidence;
+
+typedef struct FfiVec_FfiPublicAccountEvidence {
+  struct FfiPublicAccountEvidence *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiPublicAccountEvidence;
+
+typedef struct FfiVec_FfiPublicAccountEvidence FfiPublicAccountEvidenceList;
+
 typedef struct FfiPublicMessage {
-  FfiPublicExecutionContext public_context;
-  FfiRootCall root;
+  struct FfiPublicExecutionContext public_context;
+  struct FfiRootCall root;
   bool has_fee;
-  FfiFeeDeclaration fee;
+  struct FfiFeeDeclaration fee;
   FfiNonceList nonces;
   FfiPublicAccountEvidenceList admission_evidence;
 } FfiPublicMessage;
+
+/**
+ * 64-byte array type for signatures, etc.
+ */
+typedef struct FfiBytes64 {
+  uint8_t data[64];
+} FfiBytes64;
+
+typedef struct FfiBytes64 FfiSignature;
+
+typedef struct FfiSignaturePubKeyEntry {
+  FfiSignature signature;
+  FfiPublicKey public_key;
+} FfiSignaturePubKeyEntry;
+
+typedef struct FfiVec_FfiSignaturePubKeyEntry {
+  struct FfiSignaturePubKeyEntry *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiSignaturePubKeyEntry;
+
+typedef struct FfiVec_FfiSignaturePubKeyEntry FfiSignaturePubKeyList;
 
 typedef struct FfiPublicTransactionBody {
   FfiHashType hash;
   struct FfiPublicMessage message;
   FfiSignaturePubKeyList witness_set;
 } FfiPublicTransactionBody;
+
+typedef struct FfiVec_FfiBytes32 {
+  struct FfiBytes32 *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiBytes32;
+
+typedef struct FfiVec_FfiBytes32 FfiPdaSeedList;
+
+typedef struct FfiDelivery {
+  struct FfiActor from;
+  struct FfiActor to;
+  FfiMessageDataList message;
+  FfiAccountIdList inherited_authorizations;
+  bool inherits_entry_authorizations;
+  FfiPdaSeedList pda_seeds;
+} FfiDelivery;
+
+/**
+ * One step of a proof's boundary trace. `delivery` is read and freed for every kind, so an
+ * `EndPrivateSubtree` or `EndPublicSubtree` step must carry an initialized, empty one.
+ */
+typedef struct FfiBoundaryStep {
+  enum FfiBoundaryStepKind kind;
+  struct FfiDelivery delivery;
+} FfiBoundaryStep;
+
+typedef struct FfiVec_FfiBoundaryStep {
+  struct FfiBoundaryStep *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiBoundaryStep;
+
+typedef struct FfiVec_FfiBoundaryStep FfiBoundaryStepList;
+
+/**
+ * One async message a proof publishes.
+ */
+typedef struct FfiSealedMessage {
+  struct FfiBytes32 commitment;
+  FfiVecU8 epk;
+  FfiVecU8 ciphertext;
+} FfiSealedMessage;
+
+typedef struct FfiVec_FfiSealedMessage {
+  struct FfiSealedMessage *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiSealedMessage;
+
+typedef struct FfiVec_FfiSealedMessage FfiSealedMessageList;
+
+typedef struct FfiRecoveryBinding {
+  FfiAccountId address;
+  FfiVecU8 epk;
+  FfiVecU8 ciphertext;
+} FfiRecoveryBinding;
+
+typedef struct FfiVec_FfiRecoveryBinding {
+  struct FfiRecoveryBinding *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiRecoveryBinding;
+
+typedef struct FfiVec_FfiRecoveryBinding FfiRecoveryBindingList;
+
+typedef struct FfiEncryptedAccountData {
+  FfiVecU8 ciphertext;
+  FfiVecU8 epk;
+} FfiEncryptedAccountData;
+
+typedef struct FfiPrivateAction {
+  struct FfiBytes32 nullifier;
+  struct FfiBytes32 root;
+  struct FfiBytes32 commitment;
+  struct FfiEncryptedAccountData encrypted_post_state;
+} FfiPrivateAction;
+
+typedef struct FfiVec_FfiPrivateAction {
+  struct FfiPrivateAction *entries;
+  uintptr_t len;
+  uintptr_t capacity;
+} FfiVec_FfiPrivateAction;
+
+typedef struct FfiVec_FfiPrivateAction FfiPrivateActionList;
 
 typedef struct FfiProgramImageClaim {
   enum FfiProgramImageClaimKind image_claim_kind;
@@ -281,12 +498,12 @@ typedef struct FfiVec_FfiProgramImageClaim {
 typedef struct FfiVec_FfiProgramImageClaim FfiProgramImageClaims;
 
 typedef struct FfiPrivacyPreservingMessage {
-  FfiPublicExecutionContext public_context;
+  struct FfiPublicExecutionContext public_context;
   FfiBoundaryStepList boundary;
   FfiSealedMessageList async_messages;
   FfiRecoveryBindingList recovery_bindings;
   bool has_public_root;
-  FfiRootCall public_root;
+  struct FfiRootCall public_root;
   FfiNonceList nonces;
   FfiPrivateActionList private_actions;
   uint64_t block_validity_window[2];
@@ -2081,8 +2298,8 @@ enum FfiOperationError wallet_ffi_account_id_for_private_pda(struct FfiBytes32 p
  * - `handle` must be a valid wallet handle from `wallet_ffi_create_new` or `wallet_ffi_open`
  * - `out_list` must be a valid pointer to a `FfiPendingMessageList` struct
  */
-WalletFfiError wallet_ffi_list_pending_messages(struct WalletHandle *handle,
-                                                struct FfiPendingMessageList *out_list);
+enum FfiOperationError wallet_ffi_list_pending_messages(struct WalletHandle *handle,
+                                                        struct FfiPendingMessageList *out_list);
 
 /**
  * Free a pending message list returned by `wallet_ffi_list_pending_messages`.
@@ -2114,9 +2331,9 @@ void wallet_ffi_free_pending_message_list(struct FfiPendingMessageList *list);
  * - `handle` must be a valid wallet handle from `wallet_ffi_create_new` or `wallet_ffi_open`
  * - `out_result` must be a valid pointer to a `FfiTransferResult` struct
  */
-WalletFfiError wallet_ffi_receive_pending_message(struct WalletHandle *handle,
-                                                  uint64_t position,
-                                                  struct FfiTransferResult *out_result);
+enum FfiOperationError wallet_ffi_receive_pending_message(struct WalletHandle *handle,
+                                                          uint64_t position,
+                                                          struct FfiTransferResult *out_result);
 
 /**
  * Receive a pending message as `wallet_ffi_receive_pending_message` does, beside the accounts,
@@ -2153,14 +2370,14 @@ WalletFfiError wallet_ffi_receive_pending_message(struct WalletHandle *handle,
  * - `programs` and `cross_messages_json` must each be null or valid
  * - `out_result` must be a valid pointer to a `FfiTransferResult` struct
  */
-WalletFfiError wallet_ffi_receive_pending_message_with(struct WalletHandle *handle,
-                                                       uint64_t position,
-                                                       const struct FfiAccountMention *account_mentions,
-                                                       uintptr_t account_mentions_size,
-                                                       const struct FfiProgramCatalog *programs,
-                                                       const struct FfiAsyncDelivery *async_delivery,
-                                                       const char *cross_messages_json,
-                                                       struct FfiTransferResult *out_result);
+enum FfiOperationError wallet_ffi_receive_pending_message_with(struct WalletHandle *handle,
+                                                               uint64_t position,
+                                                               const struct FfiAccountMention *account_mentions,
+                                                               uintptr_t account_mentions_size,
+                                                               const struct FfiProgramCatalog *programs,
+                                                               const struct FfiAsyncDelivery *async_delivery,
+                                                               const char *cross_messages_json,
+                                                               struct FfiTransferResult *out_result);
 
 /**
  * Writes one `program_loader` bytecode segment.
@@ -2328,7 +2545,7 @@ enum FfiOperationError wallet_ffi_sync_to_block(struct WalletHandle *handle, uin
  * # Safety
  * - `handle` must be a valid wallet handle from `wallet_ffi_create_new` or `wallet_ffi_open`
  */
-WalletFfiError wallet_ffi_rescan_private_accounts(struct WalletHandle *handle);
+enum FfiOperationError wallet_ffi_rescan_private_accounts(struct WalletHandle *handle);
 
 /**
  * Get the last synced block number.

@@ -1,11 +1,9 @@
 use lee::AccountId;
+use lee_core::encryption::MlKem768EncapsulationKey;
 
 use crate::{
     error::FfiOperationError,
-    primitives::{
-        errors::PrimitiveOperationStatus,
-        types::{FfiBytes32, FfiIdentifier, FfiNullifierPublicKey, FfiPdaSeed, vectors::FfiVecU8},
-    },
+    primitives::types::{FfiBytes32, FfiNullifierPublicKey, FfiPdaSeed},
 };
 
 /// Produce account id for public PDA.
@@ -53,16 +51,18 @@ pub unsafe extern "C" fn wallet_ffi_account_id_for_private_pda(
     viewing_public_key_len: usize,
     account_id: *mut FfiBytes32,
 ) -> FfiOperationError {
-    if viewing_public_key.entries.is_null() {
+    if viewing_public_key.is_null() {
         return FfiOperationError::NullPointer;
     }
+    let viewing_public_key =
+        unsafe { std::slice::from_raw_parts(viewing_public_key, viewing_public_key_len) }.to_vec();
 
     let std_npk = npk.into();
 
-    let vpk: Result<_, PrimitiveOperationStatus> = viewing_public_key.try_into();
+    let vpk = MlKem768EncapsulationKey::from_bytes(viewing_public_key);
 
     if vpk.is_err() {
-        return vpk.err().unwrap().into();
+        return FfiOperationError::InvalidArgument;
     }
 
     unsafe {
@@ -85,7 +85,7 @@ mod tests {
 
     use crate::{
         error::FfiOperationError,
-        primitives::types::FfiBytes32,
+        primitives::types::{FfiBytes32, vectors::FfiVecU8},
         wallet::pda::{
             wallet_ffi_account_id_for_private_pda, wallet_ffi_account_id_for_public_pda,
         },
@@ -112,7 +112,7 @@ mod tests {
 
         let pda_id = AccountId::for_private_pda(&program_account_id, &pda_seed, &npk, &vpk);
 
-        let ffi_vpk = vpk.to_bytes().to_vec().into();
+        let ffi_vpk: FfiVecU8 = vpk.to_bytes().to_vec().into();
 
         let mut ffi_pda_id_base = FfiBytes32 { data: [0; 32] };
         let ffi_pda_id = &raw mut ffi_pda_id_base;
@@ -122,7 +122,7 @@ mod tests {
                 program_account_id.into(),
                 pda_seed.into(),
                 npk.into(),
-                vpk_ptr,
+                ffi_vpk.entries,
                 1184,
                 ffi_pda_id,
             )

@@ -36,8 +36,6 @@ use ::wallet::ExecutionFailureKind;
 use tokio::runtime::Handle;
 pub use types::*;
 
-// Re-export public types for cbindgen
-pub use crate::error::FfiOperationError as FfiError;
 use crate::{
     error::{FfiOperationError, print_error},
     primitives::types::FfiBytes32,
@@ -85,19 +83,19 @@ pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
     clippy::wildcard_enum_match_arm,
     reason = "We want to catch all errors for future proofing"
 )]
-pub(crate) fn map_execution_error(e: ExecutionFailureKind) -> FfiError {
+pub(crate) fn map_execution_error(e: ExecutionFailureKind) -> FfiOperationError {
     match e {
         // TODO: Perform normal error (de-)encoding on both sides
         ExecutionFailureKind::SequencerClientError(sequencer_service_rpc::ClientError::Call(
             error,
-        )) if error.message().contains("Incorrect fee") => FfiError::PayerCannotFund,
-        ExecutionFailureKind::InsufficientFundsError => FfiError::InsufficientFunds,
-        ExecutionFailureKind::KeyNotFoundError => FfiError::KeyNotFound,
-        ExecutionFailureKind::StorageError(_) => FfiError::StorageError,
+        )) if error.message().contains("Incorrect fee") => FfiOperationError::PayerCannotFund,
+        ExecutionFailureKind::InsufficientFundsError => FfiOperationError::InsufficientFunds,
+        ExecutionFailureKind::KeyNotFoundError => FfiOperationError::KeyNotFound,
+        ExecutionFailureKind::StorageError(_) => FfiOperationError::StorageError,
         ExecutionFailureKind::SequencerError(_) | ExecutionFailureKind::SequencerClientError(_) => {
-            FfiError::NetworkError
+            FfiOperationError::NetworkError
         }
-        _ => FfiError::InternalError,
+        _ => FfiOperationError::InternalError,
     }
 }
 
@@ -110,13 +108,13 @@ pub(crate) unsafe fn read_optional_account_id(ptr: *const FfiBytes32) -> Option<
 pub(crate) unsafe fn list<'entries, T>(
     data: *const T,
     size: usize,
-) -> Result<&'entries [T], WalletFfiError> {
+) -> Result<&'entries [T], FfiOperationError> {
     if size == 0 {
         return Ok(&[]);
     }
     if data.is_null() {
         print_error("Null pointer for a non-empty list");
-        return Err(WalletFfiError::NullPointer);
+        return Err(FfiOperationError::NullPointer);
     }
     Ok(unsafe { std::slice::from_raw_parts(data, size) })
 }

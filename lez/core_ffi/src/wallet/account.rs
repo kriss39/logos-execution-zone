@@ -3,14 +3,14 @@
 use std::{ffi::c_char, ptr, str::FromStr as _};
 
 use key_protocol::key_management::{KeyChain, key_tree::chain_index::ChainIndex};
-use lee::{AccountId, ProgramShardSelector};
+use lee::{AccountId, Actor};
 use wallet::account::{AccountIdWithPrivacy, HumanReadableAccount};
 
 use crate::{
     error::{FfiOperationError, print_error},
-    primitives::types::{FfiBytes32, FfiIdentifier, FfiPrivateAccountKeys, account::FfiAccount},
+    primitives::types::{FfiBytes32, FfiPrivateAccountKeys, account::FfiAccount},
     wallet::{
-        block_on, c_str_to_string,
+        FfiActorState, block_on, c_str_to_string,
         lifecycle::get_wallet,
         types::{FfiAccountList, FfiAccountListEntry, WalletHandle},
     },
@@ -391,7 +391,7 @@ pub unsafe extern "C" fn wallet_ffi_get_account_public(
 
     let account = match block_on(wallet.get_account_public(account_id)) {
         Ok(Some(a)) => a,
-        Ok(None) => return WalletFfiError::AccountNotFound,
+        Ok(None) => return FfiOperationError::AccountNotFound,
         Err(e) => {
             print_error(format!("Failed to get account: {e}"));
             return FfiOperationError::NetworkError;
@@ -526,7 +526,7 @@ pub unsafe extern "C" fn wallet_ffi_get_account_view(
 /// # Safety
 /// The account must be either null or a valid account returned by one of those
 /// functions.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wallet_ffi_free_account_data(account: *mut FfiAccount) {
     if account.is_null() {
         return;

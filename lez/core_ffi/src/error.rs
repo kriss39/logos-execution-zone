@@ -60,6 +60,8 @@ pub enum FfiOperationError {
     NotSupported = 22,
     /// Maximum response size exceeded.
     ResponseTooBig = 23,
+    /// Message not found
+    MessageNotFound = 24,
     /// Internal error (catch-all).
     InternalError = 99,
 }

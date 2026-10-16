@@ -9,7 +9,7 @@ use std::{
 };
 
 use bip39::Mnemonic;
-use wallet::{WalletCore, cli::execute_keys_restoration};
+use wallet::WalletCore;
 
 use crate::{
     error::{FfiOperationError, print_error},

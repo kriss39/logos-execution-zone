@@ -1,11 +1,4 @@
 use common::transaction::LeeTransaction;
-pub use ffi_types::{
-    FfiActor, FfiBoundaryStep, FfiBoundaryStepKind, FfiDelivery, FfiEncryptedAccountData,
-    FfiFeeDeclaration, FfiPrivateAction, FfiPublicAccountEvidence, FfiPublicAccountEvidenceKind,
-    FfiPublicExecutionContext, FfiRecoveryBinding, FfiRootCall, FfiSealedMessage,
-    FfiSignaturePubKeyEntry,
-};
-use ffi_types::{FfiNonceEntry, empty_root_call, nonces_from_ffi};
 use lee::{
     BoundaryStep, FeeDeclaration, PrivacyPreservingTransaction, PublicAccountEvidence,
     PublicExecutionContext, PublicKey, PublicTransaction, RootCall, Signature, error::LeeError,
@@ -20,8 +13,9 @@ use sequencer_executor_actor::protocol::Transaction;
 use crate::primitives::{
     errors::PrimitiveOperationStatus,
     types::{
-        FfiAccountId, FfiBytes32, FfiHashType, FfiOption, FfiPublicKey, FfiSignature, FfiU128,
-        FfiVec,
+        FfiAccountId, FfiBytes32, FfiFeeDeclaration, FfiHashType, FfiNonceEntry, FfiOption,
+        FfiPublicAccountEvidence, FfiPublicExecutionContext, FfiRootCall, FfiSignaturePubKeyEntry,
+        FfiVec, empty_root_call, nonces_from_ffi,
         vectors::{
             FfiBoundaryStepList, FfiNonceList, FfiPrivateActionList, FfiProof,
             FfiPublicAccountEvidenceList, FfiRecoveryBindingList, FfiSealedMessageList,
@@ -660,7 +654,6 @@ mod tests {
         collections::{BTreeMap, BTreeSet},
     };
 
-    use ffi_types::FfiNonceEntry;
     use lee::{
         AccountId, Actor, BoundaryStep, Delivery, EphemeralPublicKey, FeeDeclaration,
         MessageEnvelope, PublicExecutionContext, RootCall,
@@ -671,6 +664,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::primitives::types::{FfiBoundaryStep, FfiBoundaryStepKind, FfiDelivery};
 
     thread_local! {
         static LIVE_ALLOCATIONS: Cell<isize> = const { Cell::new(0) };

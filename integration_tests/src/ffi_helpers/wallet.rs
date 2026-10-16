@@ -3,12 +3,12 @@ use std::ffi::c_char;
 use core_ffi::{
     error,
     primitives::types::{
-        FfiBytes32, FfiIdentifier, FfiPrivateAccountKeys, FfiPublicAccountKey, account::FfiAccount,
+        FfiBytes32, FfiPrivateAccountKeys, FfiPublicAccountKey, account::FfiAccount,
     },
     wallet::{
         FfiAccountIdWithPrivacy, FfiAccountIdentity, FfiAccountList, FfiAccountMention,
-        FfiTransferResult, WalletHandle,
-        generic_transaction::{FfiProgramWithDependencies, FfiTransactionResult},
+        FfiPendingMessageList, FfiTransferResult, WalletHandle,
+        generic_transaction::{FfiProgramCatalog, FfiTransactionResult},
         label::{AccountIdResolvedFromLabel, LabelAvailability, LabelList},
         lifecycle::FfiCreateWalletOutput,
     },
@@ -168,7 +168,10 @@ unsafe extern "C" {
 
     pub fn wallet_ffi_save(handle: *mut WalletHandle) -> error::FfiOperationError;
 
-    pub fn wallet_ffi_sync_to_block(handle: *mut WalletHandle, block_id: u64) -> error::FfiOperationError;
+    pub fn wallet_ffi_sync_to_block(
+        handle: *mut WalletHandle,
+        block_id: u64,
+    ) -> error::FfiOperationError;
 
     pub fn wallet_ffi_get_current_block_height(
         handle: *mut WalletHandle,

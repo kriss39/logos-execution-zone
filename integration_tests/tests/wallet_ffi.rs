@@ -25,12 +25,12 @@ use common::HashType;
 use core_ffi::{
     error,
     primitives::types::{
-        FfiBytes32, FfiIdentifier, FfiPrivateAccountKeys, FfiPublicAccountKey, account::FfiAccount,
+        FfiBytes32, FfiPrivateAccountKeys, FfiPublicAccountKey, account::FfiAccount,
     },
     wallet::{
         FfiAccountIdWithPrivacy, FfiAccountIdentity, FfiAccountList, FfiAccountMention,
-        FfiTransferResult, WalletHandle,
-        generic_transaction::{FfiDependency, FfiProgramWithDependencies, FfiTransactionResult},
+        FfiPendingMessageList, FfiTransferResult, WalletHandle,
+        generic_transaction::{FfiDependency, FfiProgramCatalog, FfiTransactionResult},
         lifecycle::FfiCreateWalletOutput,
     },
 };
@@ -443,7 +443,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
             &raw mut out_account,
         )
         .unwrap();
-        out_account.try_into().unwrap()
+        (&out_account).try_into().unwrap()
     };
 
     assert_eq!(
@@ -463,7 +463,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
             &raw mut out_balance_only,
         )
         .unwrap();
-        out_balance_only.try_into().unwrap()
+        (&out_balance_only).try_into().unwrap()
     };
 
     assert_eq!(
@@ -482,7 +482,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
             &raw mut out_program_full,
         )
         .unwrap();
-        out_program_full.try_into().unwrap()
+        (&out_program_full).try_into().unwrap()
     };
     let expected_actor_state = program_full.data.actor_states[&PROGRAM_LOADER_ACCOUNT_ID].clone();
     assert!(!expected_actor_state.is_empty());
@@ -498,7 +498,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
             &raw mut out_program_view,
         )
         .unwrap();
-        out_program_view.try_into().unwrap()
+        (&out_program_view).try_into().unwrap()
     };
 
     assert_eq!(
@@ -535,7 +535,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
                 &raw const absent_id,
                 &raw mut out_absent
             ),
-            error::WalletFfiError::AccountNotFound
+            error::FfiOperationError::AccountNotFound
         );
         assert_eq!(
             wallet_ffi_get_account_view(
@@ -544,7 +544,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
                 &raw const ffi_native_program,
                 &raw mut out_absent,
             ),
-            error::WalletFfiError::AccountNotFound
+            error::FfiOperationError::AccountNotFound
         );
     }
 
@@ -581,7 +581,7 @@ fn test_wallet_ffi_get_account_private() -> Result<()> {
             &raw mut out_account,
         )
         .unwrap();
-        out_account.try_into().unwrap()
+        (&out_account).try_into().unwrap()
     };
 
     // A private account: private balances stay small (fee-exempt under the
@@ -752,7 +752,7 @@ fn wallet_ffi_public_credit_creates_only_the_native_actor_state() -> Result<()> 
                 &raw const out_account_id,
                 &raw mut out_absent,
             ),
-            error::WalletFfiError::AccountNotFound
+            error::FfiOperationError::AccountNotFound
         );
     }
 
@@ -780,7 +780,7 @@ fn wallet_ffi_public_credit_creates_only_the_native_actor_state() -> Result<()> 
             &raw mut out_account,
         )
         .unwrap();
-        out_account.try_into().unwrap()
+        (&out_account).try_into().unwrap()
     };
     assert_eq!(account.data, Account::funded(100).data);
 
@@ -1699,7 +1699,10 @@ fn test_wallet_ffi_transfer_generic_private() -> Result<()> {
         wallet_ffi_get_account_private(wallet_ffi_handle, &raw const from, &raw mut out_from)
             .unwrap();
         wallet_ffi_get_account_private(wallet_ffi_handle, &raw const to, &raw mut out_to).unwrap();
-        (out_from.try_into().unwrap(), out_to.try_into().unwrap())
+        (
+            (&out_from).try_into().unwrap(),
+            (&out_to).try_into().unwrap(),
+        )
     };
 
     let new_from_balance = from_account.data.native_balance().expect("Must fit");

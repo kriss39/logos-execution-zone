@@ -67,10 +67,10 @@ pub unsafe extern "C" fn wallet_ffi_sync_to_block(
 ///
 /// # Safety
 /// - `handle` must be a valid wallet handle from `wallet_ffi_create_new` or `wallet_ffi_open`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wallet_ffi_rescan_private_accounts(
     handle: *mut WalletHandle,
-) -> WalletFfiError {
+) -> FfiOperationError {
     let wrapper = match get_wallet(handle) {
         Ok(w) => w,
         Err(e) => return e,
@@ -80,15 +80,15 @@ pub unsafe extern "C" fn wallet_ffi_rescan_private_accounts(
         Ok(w) => w,
         Err(e) => {
             print_error(format!("Failed to lock wallet: {e}"));
-            return WalletFfiError::InternalError;
+            return FfiOperationError::InternalError;
         }
     };
 
     match block_on(wallet.rescan_private_accounts()) {
-        Ok(()) => WalletFfiError::Success,
+        Ok(()) => FfiOperationError::Success,
         Err(e) => {
             print_error(format!("Rescan failed: {e}"));
-            WalletFfiError::SyncError
+            FfiOperationError::SyncError
         }
     }
 }

@@ -6,10 +6,11 @@ use std::{
 use common::HashType;
 use lee::{
     AccountId, ProgramId,
-    privacy_preserving_transaction::circuit::{Dependency, ProgramKind, ProgramWithDependencies},
+    privacy_preserving_transaction::circuit::{Dependency, ProgramCatalog, ProgramKind},
     program::Program,
 };
 use lee_core::{MembershipProof, program::ProgramHeader};
+use wallet::AccountMention;
 
 use crate::{
     error::{FfiOperationError, print_error},
@@ -120,17 +121,18 @@ impl TryFrom<&FfiMembershipProof> for MembershipProof {
             path.push(hash.data);
         }
         let index =
-            u64::try_from(value.index).map_err(|_err| WalletFfiError::InvalidTypeConversion)?;
+            u64::try_from(value.index).map_err(|_err| FfiOperationError::InvalidTypeConversion)?;
         Ok((index, path))
     }
 }
 
 impl TryFrom<MembershipProof> for FfiMembershipProof {
-    type Error = WalletFfiError;
+    type Error = FfiOperationError;
 
     fn try_from(value: MembershipProof) -> Result<Self, Self::Error> {
         let (index, path) = value;
-        let index = usize::try_from(index).map_err(|_err| WalletFfiError::InvalidTypeConversion)?;
+        let index =
+            usize::try_from(index).map_err(|_err| FfiOperationError::InvalidTypeConversion)?;
         let ffi_path: Vec<FfiBytes32> = path.into_iter().map(FfiBytes32::from).collect();
         let path_len = ffi_path.len();
         let path_ptr = Box::into_raw(ffi_path.into_boxed_slice()) as *const FfiBytes32;
@@ -310,11 +312,10 @@ pub unsafe extern "C" fn wallet_ffi_send_generic_public_transaction(
         }
     };
 
-    let message = unsafe{std::slice::from_raw_parts(message, message_size).to_vec()};
-    let accounts = match mentions(unsafe{std::slice::from_raw_parts(
-        account_mentions,
-        account_mentions_size,
-    )}) {
+    let message = unsafe { std::slice::from_raw_parts(message, message_size).to_vec() };
+    let accounts = match mentions(unsafe {
+        std::slice::from_raw_parts(account_mentions, account_mentions_size)
+    }) {
         Ok(v) => v,
         Err(err) => return err,
     };
@@ -408,11 +409,10 @@ pub unsafe extern "C" fn wallet_ffi_send_generic_private_transaction(
         }
     };
 
-    let message = unsafe{std::slice::from_raw_parts(message, message_size)}.to_vec();
-    let accounts = match mentions(unsafe{std::slice::from_raw_parts(
-        account_mentions,
-        account_mentions_size,
-    )}) {
+    let message = unsafe { std::slice::from_raw_parts(message, message_size) }.to_vec();
+    let accounts = match mentions(unsafe {
+        std::slice::from_raw_parts(account_mentions, account_mentions_size)
+    }) {
         Ok(v) => v,
         Err(err) => return err,
     };
@@ -456,7 +456,7 @@ pub unsafe extern "C" fn wallet_ffi_send_generic_private_transaction(
 
 pub(crate) fn mentions(
     mentions: &[FfiAccountMention],
-) -> Result<Vec<AccountMention>, WalletFfiError> {
+) -> Result<Vec<AccountMention>, FfiOperationError> {
     mentions
         .iter()
         .map(AccountMention::try_from)

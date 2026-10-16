@@ -8,13 +8,15 @@ use std::{
 use lee::AccountId;
 use lee_core::PrivateAccountKind;
 use wallet::{
-    AccountIdentity, account::AccountIdWithPrivacy, cli::CliAccountMention,
-    program_facades::native_token_transfer::NativeTokenTransfer,
+    AccountIdentity,
+    account::AccountIdWithPrivacy,
+    cli::CliAccountMention,
+    program_facades::{CreditDelivery, native_token_transfer::NativeTokenTransfer},
 };
 
 use crate::{
     error::{FfiOperationError, print_error},
-    primitives::types::{FfiBytes32, FfiIdentifier, FfiPrivateAccountKeys},
+    primitives::types::{FfiBytes32, FfiPrivateAccountKeys},
     wallet::{
         block_on,
         lifecycle::get_wallet,

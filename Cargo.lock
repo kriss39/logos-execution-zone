@@ -1989,7 +1989,6 @@ dependencies = [
  "cbindgen",
  "common",
  "env_logger",
- "ffi_types",
  "kameo",
  "key_protocol",
  "lee",

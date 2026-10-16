@@ -14,13 +14,14 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result};
 use core_ffi::primitives::types::{
-    FfiOption,
-    transaction::{FfiActor, FfiTransaction, FfiTransactionKind},
+    FfiActor, FfiOption,
+    transaction::{FfiTransaction, FfiTransactionKind},
 };
 use integration_tests::{
     ffi_helpers::{primitives as primitives_ffi_helpers, sequencer as sequencer_ffi_helpers},
     get_account,
 };
+use lee::{AccountId, Actor};
 use log::info;
 use logos_blockchain_key_management_system_service::keys::Ed25519Key;
 use logos_blockchain_zone_sdk::adapter::Node as _;

@@ -1,7 +1,7 @@
 //! Discovery and receipt of messages sent to this wallet's accounts.
 
 use std::{
-    ffi::{c_char, CString},
+    ffi::{CString, c_char},
     ptr,
 };
 
@@ -10,15 +10,14 @@ use lee::privacy_preserving_transaction::circuit::ProgramCatalog;
 use wallet::{AsyncDelivery, Promotions, WalletCore};
 
 use crate::{
-    block_on, c_str_to_string,
-    error::{print_error, WalletFfiError},
-    generic_transaction::{mentions, FfiProgramCatalog},
-    list, map_execution_error,
-    types::{
+    error::{FfiOperationError, print_error},
+    wallet::{
         FfiAccountMention, FfiAsyncDelivery, FfiPendingMessage, FfiPendingMessageList,
-        FfiTransferResult, WalletHandle,
+        FfiTransferResult, WalletHandle, block_on, c_str_to_string,
+        generic_transaction::{FfiProgramCatalog, mentions},
+        lifecycle::get_wallet,
+        list, map_execution_error,
     },
-    wallet::get_wallet,
 };
 
 /// List the messages sent to this wallet's accounts that it has not received yet.
@@ -41,11 +40,11 @@ use crate::{
 /// # Safety
 /// - `handle` must be a valid wallet handle from `wallet_ffi_create_new` or `wallet_ffi_open`
 /// - `out_list` must be a valid pointer to a `FfiPendingMessageList` struct
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wallet_ffi_list_pending_messages(
     handle: *mut WalletHandle,
     out_list: *mut FfiPendingMessageList,
-) -> WalletFfiError {
+) -> FfiOperationError {
     let wrapper = match get_wallet(handle) {
         Ok(w) => w,
         Err(e) => return e,
@@ -53,14 +52,14 @@ pub unsafe extern "C" fn wallet_ffi_list_pending_messages(
 
     if out_list.is_null() {
         print_error("Null output pointer for pending message list");
-        return WalletFfiError::NullPointer;
+        return FfiOperationError::NullPointer;
     }
 
     let mut wallet = match wrapper.core.lock() {
         Ok(w) => w,
         Err(e) => {
             print_error(format!("Failed to lock wallet: {e}"));
-            return WalletFfiError::InternalError;
+            return FfiOperationError::InternalError;
         }
     };
 
@@ -68,7 +67,7 @@ pub unsafe extern "C" fn wallet_ffi_list_pending_messages(
         Ok(pending) => pending,
         Err(e) => {
             print_error(format!("Failed to list pending messages: {e}"));
-            return WalletFfiError::NetworkError;
+            return FfiOperationError::NetworkError;
         }
     };
 
@@ -98,14 +97,14 @@ pub unsafe extern "C" fn wallet_ffi_list_pending_messages(
         };
     }
 
-    WalletFfiError::Success
+    FfiOperationError::Success
 }
 
 /// Free a pending message list returned by `wallet_ffi_list_pending_messages`.
 ///
 /// # Safety
 /// The list must be either null or a valid list returned by `wallet_ffi_list_pending_messages`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wallet_ffi_free_pending_message_list(list: *mut FfiPendingMessageList) {
     if list.is_null() {
         return;
@@ -148,12 +147,12 @@ pub unsafe extern "C" fn wallet_ffi_free_pending_message_list(list: *mut FfiPend
 /// # Safety
 /// - `handle` must be a valid wallet handle from `wallet_ffi_create_new` or `wallet_ffi_open`
 /// - `out_result` must be a valid pointer to a `FfiTransferResult` struct
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wallet_ffi_receive_pending_message(
     handle: *mut WalletHandle,
     position: u64,
     out_result: *mut FfiTransferResult,
-) -> WalletFfiError {
+) -> FfiOperationError {
     unsafe {
         wallet_ffi_receive_pending_message_with(
             handle,
@@ -201,7 +200,7 @@ pub unsafe extern "C" fn wallet_ffi_receive_pending_message(
 ///   pointing to `address_openings_size` openings, or null if that is 0
 /// - `programs` and `cross_messages_json` must each be null or valid
 /// - `out_result` must be a valid pointer to a `FfiTransferResult` struct
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wallet_ffi_receive_pending_message_with(
     handle: *mut WalletHandle,
     position: u64,
@@ -211,7 +210,7 @@ pub unsafe extern "C" fn wallet_ffi_receive_pending_message_with(
     async_delivery: *const FfiAsyncDelivery,
     cross_messages_json: *const c_char,
     out_result: *mut FfiTransferResult,
-) -> WalletFfiError {
+) -> FfiOperationError {
     let wrapper = match get_wallet(handle) {
         Ok(w) => w,
         Err(e) => return e,
@@ -219,14 +218,14 @@ pub unsafe extern "C" fn wallet_ffi_receive_pending_message_with(
 
     if out_result.is_null() {
         print_error("Null output pointer for the receipt result");
-        return WalletFfiError::NullPointer;
+        return FfiOperationError::NullPointer;
     }
 
     let mut wallet = match wrapper.core.lock() {
         Ok(w) => w,
         Err(e) => {
             print_error(format!("Failed to lock wallet: {e}"));
-            return WalletFfiError::InternalError;
+            return FfiOperationError::InternalError;
         }
     };
 
@@ -247,7 +246,7 @@ pub unsafe extern "C" fn wallet_ffi_receive_pending_message_with(
                     CString::new(tx_hash.to_string()).map_or(ptr::null_mut(), CString::into_raw);
                 (*out_result).success = true;
             }
-            WalletFfiError::Success
+            FfiOperationError::Success
         }
         Err(e) => {
             unsafe {
@@ -267,7 +266,7 @@ unsafe fn receive(
     programs: *const FfiProgramCatalog,
     async_delivery: *const FfiAsyncDelivery,
     cross_messages_json: *const c_char,
-) -> Result<HashType, WalletFfiError> {
+) -> Result<HashType, FfiOperationError> {
     let mut accounts = mentions(unsafe { list(account_mentions, account_mentions_size) }?)?;
     let programs = match unsafe { programs.as_ref() } {
         Some(programs) => programs.try_into()?,
@@ -279,7 +278,7 @@ unsafe fn receive(
         let json = c_str_to_string(cross_messages_json, "cross messages")?;
         Some(serde_json::from_str(&json).map_err(|e| {
             print_error(format!("Invalid cross messages: {e}"));
-            WalletFfiError::SerializationError
+            FfiOperationError::SerializationError
         })?)
     };
     let async_delivery = match unsafe { async_delivery.as_ref() } {
@@ -327,11 +326,11 @@ unsafe fn receive(
         Ok(Some(pending)) => pending,
         Ok(None) => {
             print_error(format!("No pending message at position {position}"));
-            return Err(WalletFfiError::MessageNotFound);
+            return Err(FfiOperationError::MessageNotFound);
         }
         Err(e) => {
             print_error(format!("Failed to find the pending message: {e}"));
-            return Err(WalletFfiError::NetworkError);
+            return Err(FfiOperationError::NetworkError);
         }
     };
     block_on(wallet.receive_pending_message_with(

@@ -8,7 +8,7 @@ use std::{
 };
 
 use common::HashType;
-use lee::AccountId;
+use lee::{AccountId, ActorState, PublicKey};
 use lee_core::{
     AuthorizationSecretKey, NullifierPublicKey, NullifierSecretKey, PrivateAccountKind,
     encryption::MlKem768EncapsulationKey, program::PdaSeed,
@@ -17,7 +17,8 @@ use wallet::{AccountIdentity, AccountMention, account::AccountIdWithPrivacy};
 
 use crate::{
     error::FfiOperationError,
-    primitives::types::{FfiBytes32, FfiIdentifier, FfiPdaSeed},
+    primitives::types::{FfiBytes32, FfiPdaSeed, FfiU128},
+    wallet::list,
 };
 
 /// Opaque pointer to the Wallet instance.
@@ -351,7 +352,7 @@ impl From<lee::Account> for FfiAccount {
 }
 
 impl TryFrom<&FfiAccount> for lee::Account {
-    type Error = WalletFfiError;
+    type Error = FfiOperationError;
 
     fn try_from(value: &FfiAccount) -> Result<Self, Self::Error> {
         let mut account = Self {
@@ -363,7 +364,7 @@ impl TryFrom<&FfiAccount> for lee::Account {
 
         if value.actor_states_len > 0 {
             if value.actor_states.is_null() {
-                return Err(WalletFfiError::NullPointer);
+                return Err(FfiOperationError::NullPointer);
             }
             let actor_states =
                 unsafe { slice::from_raw_parts(value.actor_states, value.actor_states_len) };
@@ -394,11 +395,11 @@ impl From<lee::PublicKey> for FfiPublicAccountKey {
 }
 
 impl TryFrom<&FfiPublicAccountKey> for lee::PublicKey {
-    type Error = WalletFfiError;
+    type Error = FfiOperationError;
 
     fn try_from(value: &FfiPublicAccountKey) -> Result<Self, Self::Error> {
         let public_key = Self::try_new(value.public_key.data)
-            .map_err(|_err| WalletFfiError::InvalidTypeConversion)?;
+            .map_err(|_err| FfiOperationError::InvalidTypeConversion)?;
         Ok(public_key)
     }
 }
@@ -548,9 +549,9 @@ impl TryFrom<&FfiAccountIdentity> for AccountIdentity {
             FfiAccountIdentityKind::PublicNoSign => Ok(Self::PublicNoSign(value.account_id.into())),
             FfiAccountIdentityKind::PublicForeign => {
                 let public_key = PublicKey::try_new(value.public_key.data)
-                    .map_err(|_| WalletFfiError::InvalidKeyValue)?;
+                    .map_err(|_| FfiOperationError::InvalidKeyValue)?;
                 if AccountId::from(value.account_id) != AccountId::from(&public_key) {
-                    return Err(WalletFfiError::InvalidAccountId);
+                    return Err(FfiOperationError::InvalidAccountId);
                 }
                 Ok(Self::PublicForeign(public_key))
             }
@@ -558,7 +559,7 @@ impl TryFrom<&FfiAccountIdentity> for AccountIdentity {
                 let program: AccountId = value.authority.into();
                 let seed: PdaSeed = value.seed.into();
                 if AccountId::from(value.account_id) != AccountId::for_public_pda(&program, &seed) {
-                    return Err(WalletFfiError::InvalidAccountId);
+                    return Err(FfiOperationError::InvalidAccountId);
                 }
                 Ok(Self::PublicPda { program, seed })
             }
@@ -707,15 +708,15 @@ mod tests {
 
     use lee::{AccountId, PrivateKey, PublicKey};
     use lee_core::{
-        AuthorizationSecretKey, Identifier, NullifierPublicKey, NullifierSecretKey,
-        PrivateAccountKind, encryption::ViewingPublicKey, program::PdaSeed,
+        AuthorizationSecretKey, NullifierPublicKey, NullifierSecretKey, PrivateAccountKind,
+        encryption::ViewingPublicKey, program::PdaSeed,
     };
     use wallet::{AccountIdentity, AccountMention};
 
     use crate::{
         error::FfiOperationError,
         primitives::types::FfiBytes32,
-        wallet::{FfiAccountIdentity, FfiAccountIdentityKind},
+        wallet::{FfiAccountIdentity, FfiAccountIdentityKind, FfiAccountMention},
     };
 
     #[test]
@@ -901,7 +902,7 @@ mod tests {
 
         assert_eq!(
             AccountIdentity::try_from(&contradictory).unwrap_err(),
-            WalletFfiError::InvalidAccountId
+            FfiOperationError::InvalidAccountId
         );
     }
 
@@ -921,7 +922,7 @@ mod tests {
 
         assert_eq!(
             AccountIdentity::try_from(&contradictory).unwrap_err(),
-            WalletFfiError::InvalidAccountId
+            FfiOperationError::InvalidAccountId
         );
     }
 
