@@ -624,6 +624,9 @@ impl<S: StorageActorTrait, B: BedrockActorTrait>
                     .on_channel_config_update(live_channel_config)
                     .await;
             }
+            sequencer_bedrock_actor::protocol::ChannelEvent::Deposits(deposits) => {
+                self.sequencer.on_observed_deposits(deposits);
+            }
         }
     }
 }

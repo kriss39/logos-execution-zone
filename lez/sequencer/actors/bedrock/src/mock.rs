@@ -3,6 +3,8 @@
     reason = "`handle*` prefix is used for convenience with `Message` trait"
 )]
 
+use std::collections::HashSet;
+
 use kameo::{
     Actor,
     actor::ActorRef,
@@ -15,9 +17,9 @@ use crate::{
     error::Error,
     protocol::{
         AccreditedKeys, BoxStream, ChangeChannelConfig, CheckChannelExists, CheckIsOurTurn,
-        CreateChannel, GetAccreditedKeys, GetChannelId, GetChannelIdReply, GetChannelTipMessageId,
-        GetChannelTipSlot, MsgId, PrepareConfig, PreparedChannelConfig, PublishBlock,
-        PublishOutcome, ReadChannel, Slot, ZoneMessage,
+        CreateChannel, GetAccreditedKeys, GetChannelId, GetChannelIdReply, GetChannelNotes,
+        GetChannelTipMessageId, GetChannelTipSlot, MsgId, NoteId, PrepareConfig,
+        PreparedChannelConfig, PublishBlock, PublishOutcome, ReadChannel, Slot, ZoneMessage,
     },
 };
 
@@ -70,6 +72,12 @@ mockall::mock! {
             msg: GetAccreditedKeys,
             ctx: &mut Context<Self, Result<Option<AccreditedKeys>>>
         ) -> Result<Option<AccreditedKeys>>;
+
+        pub fn handle_get_channel_notes(
+            &mut self,
+            msg: GetChannelNotes,
+            ctx: &mut Context<Self, HashSet<NoteId>>
+        ) -> HashSet<NoteId>;
 
         pub fn handle_get_channel_tip_slot(
             &mut self,
@@ -220,6 +228,18 @@ impl Message<GetAccreditedKeys> for MockBedrockActor {
         ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         self.handle_get_accredited_keys(msg, ctx)
+    }
+}
+
+impl Message<GetChannelNotes> for MockBedrockActor {
+    type Reply = HashSet<NoteId>;
+
+    async fn handle(
+        &mut self,
+        msg: GetChannelNotes,
+        ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.handle_get_channel_notes(msg, ctx)
     }
 }
 

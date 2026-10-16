@@ -73,6 +73,10 @@ pub enum ChannelEvent {
     },
 
     Config(LiveChannelConfig),
+
+    /// Deposits seen in L1 blocks before finality. Observations, not view: a
+    /// reorg can drop one or deliver it again.
+    Deposits(Vec<DepositInfo>),
 }
 
 /// How the unfinalized message lineage moved across one update.
@@ -120,6 +124,8 @@ pub struct LiveChannelConfig {
     pub config_tip: MsgId,
     /// Signatures Bedrock demands of the next config op, exactly.
     pub required_signatures: u16,
+    /// Signatures Bedrock demands of a channel transfer, exactly.
+    pub transfer_threshold: u16,
 }
 
 /// Create the channel and write `genesis` into it in one Mantle tx.
@@ -131,6 +137,7 @@ pub struct CreateChannel {
     pub keys: Vec<Ed25519PublicKey>,
     pub channel_params: ChannelParams,
     pub configuration_threshold: u16,
+    pub transfer_threshold: u16,
 }
 
 /// Publish block to the configured channel.
@@ -146,6 +153,10 @@ pub struct PublishBlock {
     ///
     /// [`None`] will omit the check.
     pub expected_seq: Option<ChannelSeq>,
+    /// Deposited channel notes the block mints from. The inscription is bundled
+    /// with a transfer re-creating them unchanged, so it lands only where they
+    /// exist. Requires `parent`.
+    pub pinned_deposit_notes: Vec<NoteId>,
 }
 
 /// Outcome of a publish operation.
@@ -221,6 +232,9 @@ impl AccreditedKeys {
         self.keys.get(usize::from(self.tip_sequencer)).copied()
     }
 }
+
+/// The channel's notes on the current L1 branch, finalized or not.
+pub struct GetChannelNotes;
 
 /// Get current channel frontier slot on the connected chain.
 pub struct GetChannelTipSlot;

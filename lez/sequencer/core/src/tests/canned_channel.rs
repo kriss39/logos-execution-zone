@@ -1,6 +1,9 @@
 //! A [`MockBedrockActor`] serving a canned channel.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::anyhow;
 use common::block::Block;
@@ -33,6 +36,10 @@ pub struct CannedChannel {
     pub tip: Option<MsgId>,
     /// Fails every publish.
     pub publish_fails: bool,
+    /// Channel notes on the current branch, the ones a publish may pin.
+    pub channel_notes: HashSet<NoteId>,
+    /// The deposit notes each publish pinned, in publish order.
+    pub pins: Arc<Mutex<Vec<Vec<NoteId>>>>,
 }
 
 impl CannedChannel {
@@ -55,6 +62,8 @@ impl CannedChannel {
             messages,
             tip,
             publish_fails,
+            channel_notes,
+            pins,
         } = self;
         let tip = Arc::new(Mutex::new(tip));
 
@@ -78,6 +87,10 @@ impl CannedChannel {
             });
         mock.expect_handle_change_channel_config()
             .returning(|_msg, _ctx| Ok(()));
+        mock.expect_handle_get_channel_notes().returning({
+            let channel_notes = channel_notes.clone();
+            move |_msg, _ctx| channel_notes.clone()
+        });
         mock.expect_handle_read_channel()
             .returning(move |ReadChannel { after }, _ctx| Ok(history_after(&messages, after)));
         mock.expect_handle_create_channel().returning({
@@ -92,8 +105,18 @@ impl CannedChannel {
                       withdrawals,
                       parent,
                       expected_seq: _,
+                      pinned_deposit_notes,
                   },
                   _ctx| {
+                if !pinned_deposit_notes.is_empty() && parent.is_none() {
+                    return Err(Error::PinnedDepositsWithoutParent);
+                }
+                if let Some(missing) = pinned_deposit_notes
+                    .iter()
+                    .find(|note| !channel_notes.contains(note))
+                {
+                    return Err(Error::DepositNoteNotOnBranch(*missing));
+                }
                 let current = *tip.lock().expect("channel tip lock poisoned");
                 if let Some(parent) = parent
                     && current.is_some_and(|current| current != parent)
@@ -103,13 +126,17 @@ impl CannedChannel {
                         block.header.block_id
                     )));
                 }
-                land(
+                let outcome = land(
                     &tip,
                     publish_fails,
                     &block,
                     parent,
                     mock_released_notes(&withdrawals),
-                )
+                )?;
+                pins.lock()
+                    .expect("pins lock poisoned")
+                    .push(pinned_deposit_notes);
+                Ok(outcome)
             },
         );
         mock

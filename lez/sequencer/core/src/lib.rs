@@ -1,7 +1,7 @@
 #![allow(dead_code, reason = "TODO")]
 
 use std::{
-    collections::{BTreeMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     path::Path,
     sync::Arc,
     time::{Duration, Instant},
@@ -40,7 +40,7 @@ use mempool::{MemPool, MemPoolHandle};
 use num_bigint::BigUint;
 use sequencer_bedrock_actor::{
     BedrockActorTrait,
-    protocol::{Ed25519Key, LiveChannelConfig, ViewChange},
+    protocol::{Ed25519Key, GetChannelNotes, LiveChannelConfig, ViewChange},
 };
 use sequencer_channel_config_actor as channel_config;
 pub use sequencer_channel_config_actor::{ChannelConfigActor, SubmitConfig};
@@ -236,6 +236,9 @@ pub struct SequencerCore<S: StorageActorTrait, B: BedrockActorTrait> {
     finalized_config: MsgId,
     /// Channel sequence of the last thing `BedrockActor` handed us.
     applied_seq: Option<sequencer_bedrock_actor::protocol::ChannelSeq>,
+    /// Deposits seen on L1 but not yet final, minted in a block pinned on
+    /// their notes. In memory only: after a restart they mint once final.
+    observed_deposits: Vec<DepositInfo>,
 }
 
 /// A funded channel config, from the moment zone-sdk funds it to the moment it
@@ -518,6 +521,9 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
                             configuration_threshold: committee_discovery::channel_config_threshold(
                                 keys.len(),
                             ),
+                            transfer_threshold: committee_discovery::channel_config_threshold(
+                                keys.len(),
+                            ),
                         })
                         .await
                         .unwrap_or_else(|err| {
@@ -529,6 +535,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
                             withdrawals: vec![],
                             parent: None,
                             expected_seq: None,
+                            pinned_deposit_notes: Vec::new(),
                         })
                         .await
                         .unwrap_or_else(|err| {
@@ -601,6 +608,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
             config_draft: None,
             finalized_config,
             applied_seq: None,
+            observed_deposits: Vec::new(),
         };
 
         sequencer_core_metrics::record_chain_height(sequencer_core.chain_height().await);
@@ -902,6 +910,12 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
         // not re-appended, and a finalization only ever moves the tier forward.
         let deposit_records: Vec<PendingDepositEventRecord> =
             deposits.iter().map(pending_deposit_event_record).collect();
+        // A final deposit is minted from its store record from here on.
+        self.observed_deposits.retain(|observed_deposit| {
+            deposits
+                .iter()
+                .all(|deposit| deposit.op_id != observed_deposit.op_id)
+        });
 
         // A set, because a released note identifies its withdrawal outright: the
         // chain releases a note once, so a repeat here is a re-delivery, not a
@@ -1102,6 +1116,63 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
         }
     }
 
+    /// Holds deposits seen before finality, for production to mint pinned.
+    pub fn on_observed_deposits(&mut self, deposits: Vec<DepositInfo>) {
+        for deposit in deposits {
+            if self
+                .observed_deposits
+                .iter()
+                .all(|observed_deposit| observed_deposit.op_id != deposit.op_id)
+            {
+                self.observed_deposits.push(deposit);
+            }
+        }
+    }
+
+    /// Mints for the observed deposits that are unminted on `state`, not yet
+    /// recorded as final, and have every note on the current L1 branch, each
+    /// with the notes its block must pin.
+    async fn pinnable_deposits(
+        &self,
+        state: &lee::V03State,
+        recorded_op_ids: &HashSet<HashType>,
+    ) -> Vec<(LeeTransaction, Vec<NoteId>)> {
+        if self.observed_deposits.is_empty() {
+            return Vec::new();
+        }
+        let channel_notes = match self.bedrock_ref.ask(GetChannelNotes).await {
+            Ok(notes) => notes,
+            Err(err) => {
+                warn!("Pinning no deposits this turn: {:#}", anyhow!(err));
+                return Vec::new();
+            }
+        };
+
+        self.observed_deposits
+            .iter()
+            .filter(|deposit| {
+                let op_id = HashType(deposit.op_id);
+                !recorded_op_ids.contains(&op_id) && !deposit_already_minted(state, op_id)
+            })
+            .filter_map(|deposit| {
+                let notes: Vec<NoteId> = deposit.notes.iter().map(|note| note.note_id).collect();
+                if notes.is_empty() || !notes.iter().all(|note| channel_notes.contains(note)) {
+                    return None;
+                }
+                build_bridge_deposit_tx_from_event(&pending_deposit_event_record(deposit))
+                    .map_err(|err| {
+                        warn!(
+                            "Skipping observed deposit {} due to tx build failure: {:#}",
+                            hex::encode(deposit.op_id),
+                            anyhow!(err)
+                        );
+                    })
+                    .ok()
+                    .map(|tx| (tx, notes))
+            })
+            .collect()
+    }
+
     /// Hands the channel-config actor the live channel and the config it should
     /// have. Sent from the follow path, turn or not: a peer only signs a draft
     /// matching the config it derived for itself.
@@ -1144,6 +1215,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
             withdrawals,
             parent,
             mempool_transactions,
+            pinned_deposit_notes,
         } = self
             .build_block_from_mempool()
             .await
@@ -1160,6 +1232,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
                 withdrawals: withdrawals.clone(),
                 parent: withdrawals.is_empty().then_some(parent),
                 expected_seq: self.applied_seq,
+                pinned_deposit_notes,
             })
             .await;
 
@@ -1701,11 +1774,16 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
         //
         // Skip deposits whose receipt has a nonempty bridge actor state.
         // Reverting a block also reverts its receipts, allowing those deposits to be retried.
-        let pending_deposits: VecDeque<LeeTransaction> = self
+        let deposit_records = self
             .storage_ref
             .ask(GetPendingDepositEvents)
             .await
-            .context("Failed to load pending deposit events")?
+            .context("Failed to load pending deposit events")?;
+        let recorded_op_ids: HashSet<HashType> = deposit_records
+            .iter()
+            .map(|record| record.deposit_op_id)
+            .collect();
+        let mut pending_deposits: VecDeque<LeeTransaction> = deposit_records
             .into_iter()
             .filter(|record| !deposit_already_minted(&working_state, record.deposit_op_id))
             .filter_map(|record| {
@@ -1720,6 +1798,18 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
                     .ok()
             })
             .collect();
+
+        // A deposit not yet final mints only in a block pinned on its notes.
+        let mut pins: HashMap<HashType, Vec<NoteId>> = HashMap::new();
+        for (tx, notes) in self
+            .pinnable_deposits(&working_state, &recorded_op_ids)
+            .await
+        {
+            pins.insert(tx.hash(), notes);
+            pending_deposits.push_back(tx);
+        }
+        let mut pinned_deposit_notes = Vec::new();
+        let mut deferred_withdrawals = Vec::new();
 
         let max_block_size = usize::try_from(
             committee_discovery::channel_params(&working_state)
@@ -1767,6 +1857,13 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
             .or_else(|| self.mempool.pop().map(|(origin, tx)| (origin, tx, false)))
         {
             let tx_hash = tx.hash();
+
+            // A block pinning deposits publishes on an explicit parent, which
+            // cannot carry withdrawals.
+            if !pinned_deposit_notes.is_empty() && extract_bridge_withdraw_data(&tx).is_some() {
+                deferred_withdrawals.push((origin, tx));
+                continue;
+            }
 
             let temp_valid_transactions = [
                 valid_transactions.as_slice(),
@@ -1895,6 +1992,9 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
                 if !from_store {
                     mempool_transactions.push((origin, tx.clone()));
                 }
+                if let Some(notes) = pins.remove(&tx_hash) {
+                    pinned_deposit_notes.extend(notes);
+                }
                 valid_transactions.push(tx);
             } else {
                 sequencer_core_metrics::increment_mempool_failed_transactions_total();
@@ -1913,6 +2013,9 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
             if valid_transactions.len() >= self.sequencer_config.max_num_tx_in_block {
                 break;
             }
+        }
+        for (origin, tx) in deferred_withdrawals.into_iter().rev() {
+            self.mempool.push_front((origin, tx));
         }
 
         let fee_tx = fee_invocation(
@@ -1953,6 +2056,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
             withdrawals,
             parent,
             mempool_transactions,
+            pinned_deposit_notes,
         })
     }
 
@@ -2191,6 +2295,8 @@ struct BlockWithMeta {
     /// The transactions this block took from the mempool, in the order it took
     /// them.
     mempool_transactions: Vec<(TransactionOrigin, LeeTransaction)>,
+    /// Notes of the not-yet-final deposits this block mints, to pin on publish.
+    pinned_deposit_notes: Vec<NoteId>,
 }
 
 /// A turn given up because the channel moved under the block while it was
@@ -2309,8 +2415,12 @@ fn config_target(
         .iter()
         .filter_map(|key| sequencer_stake_core::SequencerKey::new(key.to_bytes()))
         .collect();
-    let new_keys =
-        committee_discovery::committee_update(final_state, &live_keys, live.required_signatures)?;
+    let new_keys = committee_discovery::committee_update(
+        final_state,
+        &live_keys,
+        live.required_signatures,
+        live.transfer_threshold,
+    )?;
     let Some(channel_params) = committee_discovery::channel_params(final_state) else {
         warn!("sequencer_stake config carries no channel posting params; no committee update");
         return None;
@@ -2327,7 +2437,7 @@ fn config_target(
         // The op carries the threshold the *next* config must clear, so it is
         // measured against the committee this op installs.
         configuration_threshold: committee_discovery::channel_config_threshold(keys.len()),
-        transfer_threshold: system_accounts::DEFAULT_SEQUENCER_WITHDRAW_THRESHOLD,
+        transfer_threshold: committee_discovery::channel_config_threshold(keys.len()),
         keys,
         parent: live.config_tip,
         posting_timeframe: channel_params.posting_timeframe,
