@@ -193,6 +193,10 @@ pub fn fresh_deployment_settings(template: &Path) -> Result<PathBuf> {
         mantle::transactions::{CryptarchiaParameter, GenesisTime, GenesisTx},
     };
 
+    let out_dir = template
+        .parent()
+        .context("Deployment settings template has no parent directory")?
+        .to_path_buf();
     let template = std::fs::read_to_string(template)
         .with_context(|| format!("Failed to read {}", template.display()))?;
     let mut settings: serde_yaml::Value =
@@ -226,7 +230,7 @@ pub fn fresh_deployment_settings(template: &Path) -> Result<PathBuf> {
     let (mut file, path) = tempfile::Builder::new()
         .prefix("bedrock-deployment-settings-")
         .suffix(".yaml")
-        .tempfile()
+        .tempfile_in(&out_dir)
         .context("Failed to create deployment settings file")?
         .keep()
         .context("Failed to persist deployment settings file")?;
@@ -244,14 +248,15 @@ pub async fn setup_bedrock_node() -> Result<(DockerCompose, SocketAddr)> {
     .context("Failed to prepare Bedrock deployment settings")?;
 
     let mut compose = DockerCompose::with_auto_client(&[bedrock_compose_path])
-            .await
-            .context("Failed to setup docker compose for Bedrock")?
-            // Setting port to 0 to avoid conflicts between parallel tests, actual port will be retrieved after container is up
-            .with_env("PORT", "0")
-            .with_env(
-                "BEDROCK_DEPLOYMENT_SETTINGS",
-                deployment_settings.to_string_lossy().into_owned(),
-            );
+        .await
+        .context("Failed to setup docker compose for Bedrock")?
+        // Setting port to 0 to avoid conflicts between parallel tests, actual port will be
+        // retrieved after container is up
+        .with_env("PORT", "0")
+        .with_env(
+            "BEDROCK_DEPLOYMENT_SETTINGS",
+            deployment_settings.to_string_lossy().into_owned(),
+        );
 
     #[expect(
         clippy::items_after_statements,
