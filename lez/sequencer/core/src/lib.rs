@@ -1511,17 +1511,18 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
                         *summary = scratch_summary;
                     }
                     Err(err) => {
-                        // A gossiped tx the leader already included is expected to
-                        // fail here (e.g. on nonce) for every other node on its
-                        // turn; that is steady-state noise, not an error.
-                        // User-submitted failures still warrant `error!`.
                         if matches!(origin, TransactionOrigin::Gossip) {
+                            // A gossiped tx the leader already included is expected to
+                            // fail here (e.g. on nonce) for every other node on its
+                            // turn; that is steady-state noise, not an error.
                             debug!(
                                 "Transaction with hash {tx_hash} failed settlement: {:#}, skipping it",
                                 anyhow!(err)
                             );
                         } else {
-                            error!(
+                            // A user-submitted failure is the user's, not the node's,
+                            // so it is only a warning.
+                            warn!(
                                 "Transaction with hash {tx_hash} failed settlement: {:#}, skipping it",
                                 anyhow!(err)
                             );
@@ -1558,7 +1559,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
             }
         }
 
-        log::info!("Validated transaction with hash {tx_hash}, including it in block");
+        debug!("Validated transaction with hash {tx_hash}, including it in block");
         true
     }
 
@@ -1807,7 +1808,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
                     prev_block_hash,
                     new_block_timestamp,
                 )? {
-                    error!(
+                    warn!(
                         "Transaction {tx_hash} cannot fit in any block under the \
                          {max_block_size} byte limit; giving up on it rather than stalling production",
                     );
@@ -1850,7 +1851,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
                 // builder behind it for ever. The RPC door screens these out,
                 // but gossip ingest does not, so drop it here instead.
                 if !DeclaredGasBudget::fits_empty(view) {
-                    error!(
+                    warn!(
                         "Transaction with hash {tx_hash} declares gas beyond the block caps \
                          (limit {}, bytes {}); dropping it rather than stalling production",
                         view.gas_limit(),
