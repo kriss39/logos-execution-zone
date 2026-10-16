@@ -390,6 +390,9 @@ pub async fn setup_wallet(
             );
     }
 
+    // Imported accounts predate the tip.
+    wallet.storage_mut().set_last_synced_block(0);
+
     wallet
         .store_persistent_data()
         .context("Failed to store wallet persistent data")?;

@@ -231,12 +231,7 @@ impl NewSubcommand {
             }
 
             wallet_core
-                .create_shared_pda_account(
-                    group.clone(),
-                    pda_seed,
-                    pid,
-                    identifier.unwrap_or_else(rand::random),
-                )
+                .create_shared_pda_account(group.clone(), pda_seed, pid, identifier)
                 .await?
         } else if let Some(id) = identifier {
             wallet_core
