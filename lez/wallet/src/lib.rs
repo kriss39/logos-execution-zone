@@ -463,6 +463,7 @@ impl WalletCore {
         index.track_initialization(account_id);
 
         let poller = self.poller_helm();
+        let bar = indicatif::ProgressBar::new(cursor);
         let mut blocks = std::pin::pin!(poller.poll_block_range(1..=cursor));
         while let Some(block) = blocks.try_next().await? {
             for tx in block.body.transactions {
@@ -474,7 +475,9 @@ impl WalletCore {
                     .key_chain_mut()
                     .sync_updates_via_nullifiers(&pp_tx.message, &mut index);
             }
+            bar.inc(1);
         }
+        bar.finish();
 
         let now = self.storage.last_synced_block();
         // This is a defence-in-depth. Currently during the async update the cursor
