@@ -9,7 +9,7 @@ use token_core::{TokenDefinition, TokenHolding};
 use crate::{
     WalletCore,
     account::{AccountIdWithPrivacy, HumanReadableAccount, Label},
-    cli::{CliAccountMention, SubcommandReturnValue, WalletSubcommand},
+    cli::{CliAccountMention, SubcommandReturnValue, WalletSubcommand, confirm},
 };
 
 /// Represents generic chain CLI subcommand.
@@ -37,7 +37,11 @@ pub enum AccountSubcommand {
     #[command(subcommand)]
     New(NewSubcommand),
     /// Sync private accounts.
-    SyncPrivate,
+    SyncPrivate {
+        /// Skip the confirmation prompt.
+        #[arg(short, long)]
+        yes: bool,
+    },
     /// List all accounts owned by the wallet.
     #[command(visible_alias = "ls")]
     List {
@@ -544,7 +548,19 @@ impl WalletSubcommand for AccountSubcommand {
                 account_id,
             } => Self::handle_get(raw, keys, account_id, wallet_core).await,
             Self::New(new_subcommand) => new_subcommand.handle_subcommand(wallet_core).await,
-            Self::SyncPrivate => {
+            Self::SyncPrivate { yes } => {
+                if !yes {
+                    let from = wallet_core.storage().last_synced_block();
+                    let pending = wallet_core.get_last_block_id().await?.saturating_sub(from);
+                    if pending > 0
+                        && !confirm(&format!(
+                            "Syncing {pending} blocks may take a while. Continue?"
+                        ))?
+                    {
+                        anyhow::bail!("Sync cancelled");
+                    }
+                }
+
                 let curr_last_block = wallet_core.sync_to_latest_block().await?;
                 Ok(SubcommandReturnValue::SyncedToBlock(curr_last_block))
             }
