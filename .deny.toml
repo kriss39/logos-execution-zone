@@ -16,8 +16,12 @@ ignore = [
   { id = "RUSTSEC-2026-0118", reason = "`hickory-proto` v0.25.0-alpha.5 is present transitively from logos crates, modification may break integration" },
   { id = "RUSTSEC-2026-0119", reason = "`hickory-proto` v0.25.0-alpha.5 is present transitively from logos crates, modification may break integration" },
 
-  { id = "RUSTSEC-2024-0370", reason = "transitive dependency of `logos-blockchain-http-api-common`, can't do anything than wait for upstream fix" },
   { id = "RUSTSEC-2026-0173", reason = "`proc-macro-error2` is unmaintained; pulled in transitively via `leptos_macro` and `overwatch-derive`, waiting on upstream fix" },
+  { id = "RUSTSEC-2024-0449", reason = "`unsafe-libyaml` unmaintained, pulled in by the logos crates" },
+  { id = "RUSTSEC-2026-0344", reason = "`ruzstd` reached only through `object` under `risc0-zkvm`" },
+  { crate = "chacha20@0.10.0", reason = "yanked, in every guest tree, so a bump moves every program id" },
+  { crate = "der@0.8.0", reason = "yanked, reached only through `keycard-rs`" },
+  { crate = "zip@2.4.2", reason = "yanked, reached only through `risc0-circuit-recursion`" },
 ]
 yanked = "deny"
 unused-ignored-advisory = "deny"
