@@ -13,9 +13,11 @@ use sequencer_executor_actor::protocol::Transaction;
 use crate::primitives::{
     errors::PrimitiveOperationStatus,
     types::{
-        FfiAccountId, FfiBytes32, FfiFeeDeclaration, FfiHashType, FfiNonceEntry, FfiOption,
-        FfiPublicAccountEvidence, FfiPublicExecutionContext, FfiRootCall, FfiSignaturePubKeyEntry,
-        FfiVec, empty_root_call, nonces_from_ffi,
+        FfiAccountId, FfiBytes32, FfiFeeDeclaration, FfiHashType, FfiOption, FfiVec,
+        actor::{
+            FfiNonceEntry, FfiPublicAccountEvidence, FfiPublicExecutionContext, FfiRootCall,
+            FfiSignaturePubKeyEntry, empty_root_call, nonces_from_ffi,
+        },
         vectors::{
             FfiBoundaryStepList, FfiNonceList, FfiPrivateActionList, FfiProof,
             FfiPublicAccountEvidenceList, FfiRecoveryBindingList, FfiSealedMessageList,
@@ -664,7 +666,9 @@ mod tests {
     };
 
     use super::*;
-    use crate::primitives::types::{FfiBoundaryStep, FfiBoundaryStepKind, FfiDelivery};
+    use crate::primitives::types::actor::{
+        FfiActor, FfiBoundaryStep, FfiBoundaryStepKind, FfiDelivery,
+    };
 
     thread_local! {
         static LIVE_ALLOCATIONS: Cell<isize> = const { Cell::new(0) };
@@ -875,17 +879,45 @@ mod tests {
             .map(|step| &mut step.delivery)
     }
 
+    fn zero_root_call() -> FfiRootCall {
+        FfiRootCall {
+            to: FfiActor {
+                account_id: FfiBytes32::default(),
+                program_account_id: FfiBytes32::default(),
+            },
+            message: FfiVec::default(),
+        }
+    }
+
+    fn zero_delivery() -> FfiDelivery {
+        FfiDelivery {
+            from: FfiActor {
+                account_id: FfiBytes32::default(),
+                program_account_id: FfiBytes32::default(),
+            },
+            to: FfiActor {
+                account_id: FfiBytes32::default(),
+                program_account_id: FfiBytes32::default(),
+            },
+            message: FfiVec::default(),
+            inherited_authorizations: FfiVec::default(),
+            inherits_entry_authorizations: false,
+            pda_seeds: FfiVec::default(),
+        }
+    }
+
     fn zero_inactive_payloads(body: &mut FfiPrivateTransactionBody) {
         body.message.has_public_root = false;
         drop(RootCall::from(std::mem::replace(
             &mut body.message.public_root,
-            unsafe { std::mem::zeroed() },
+            zero_root_call(),
         )));
         edit(&mut body.message.boundary, |steps| {
             for slot in end_of_subtree_deliveries(steps) {
-                drop(Delivery::<Actor>::from(std::mem::replace(slot, unsafe {
-                    std::mem::zeroed()
-                })));
+                drop(Delivery::<Actor>::from(std::mem::replace(
+                    slot,
+                    zero_delivery(),
+                )));
             }
         });
     }

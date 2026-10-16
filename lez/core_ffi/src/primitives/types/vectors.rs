@@ -1,7 +1,10 @@
 use crate::primitives::types::{
-    FfiAccountId, FfiActor, FfiBoundaryStep, FfiBytes32, FfiNonceEntry, FfiPrivateAction,
-    FfiPublicAccountEvidence, FfiRecoveryBinding, FfiSealedMessage, FfiSignaturePubKeyEntry,
-    FfiVec, transaction::FfiTransaction,
+    FfiAccountId, FfiBytes32, FfiVec,
+    actor::{
+        FfiActor, FfiBoundaryStep, FfiNonceEntry, FfiPrivateAction, FfiPublicAccountEvidence,
+        FfiRecoveryBinding, FfiSealedMessage, FfiSignaturePubKeyEntry,
+    },
+    transaction::FfiTransaction,
 };
 
 pub type FfiVecU8 = FfiVec<u8>;

@@ -134,7 +134,7 @@ typedef enum FfiOperationError {
    */
   FfiOperationError_ResponseTooBig = 23,
   /**
-   * Message not found
+   * Message not found.
    */
   FfiOperationError_MessageNotFound = 24,
   /**
@@ -1052,7 +1052,7 @@ void primitives_ffi_free_private_account_keys(struct FfiPrivateAccountKeys *keys
  * The caller must ensure that:
  * - `val` is a pointer to an `FfiOption<FfiAccount>` produced by this library and not yet freed.
  */
-void sequencer_ffi_free_ffi_account_opt(struct FfiOption_FfiAccount *val);
+void primitves_ffi_free_ffi_account_opt(struct FfiOption_FfiAccount *val);
 
 /**
  * Frees the resources owned by an `FfiBlock` value.

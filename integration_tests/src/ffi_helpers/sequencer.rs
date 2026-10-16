@@ -150,6 +150,7 @@ pub fn wait_for_sequencer_ffi_block(
     }
 }
 
+#[must_use]
 pub fn queried_account(sequencer: &SequencerServiceFFI, account_id: AccountId) -> Option<Account> {
     // SAFETY: `sequencer` is a valid reference for the duration of the call.
     let res =

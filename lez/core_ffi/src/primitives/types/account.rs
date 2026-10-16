@@ -188,7 +188,7 @@ impl TryFrom<&FfiAccount> for lee::Account {
 /// The caller must ensure that:
 /// - `val` is a pointer to an `FfiOption<FfiAccount>` produced by this library and not yet freed.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn sequencer_ffi_free_ffi_account_opt(val: *mut FfiOption<FfiAccount>) {
+pub unsafe extern "C" fn primitves_ffi_free_ffi_account_opt(val: *mut FfiOption<FfiAccount>) {
     if val.is_null() {
         log::error!("Trying to free a null pointer. Exiting");
         return;

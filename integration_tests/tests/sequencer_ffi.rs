@@ -14,7 +14,8 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result};
 use core_ffi::primitives::types::{
-    FfiActor, FfiOption,
+    FfiOption,
+    actor::FfiActor,
     transaction::{FfiTransaction, FfiTransactionKind},
 };
 use integration_tests::{
