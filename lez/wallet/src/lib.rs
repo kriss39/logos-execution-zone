@@ -1,5 +1,6 @@
 #![expect(
     clippy::print_stdout,
+    clippy::print_stderr,
     reason = "This is a CLI application, printing to stdout and stderr is expected and convenient"
 )]
 #![expect(
@@ -142,7 +143,7 @@ impl WalletCore {
         password: &str,
     ) -> Result<(Self, Mnemonic)> {
         let (storage, mnemonic) = Storage::new(password).context("Failed to create storage")?;
-        let wallet = Self::new(
+        let mut wallet = Self::new(
             config_path,
             storage_path,
             statistics_path,
@@ -150,6 +151,18 @@ impl WalletCore {
             storage,
         )
         .await?;
+
+        // A new seed owns nothing earlier.
+        match wallet.get_last_block_id().await {
+            Ok(tip) => {
+                wallet.storage.set_last_synced_block(tip);
+                println!("New wallet starts synced at block {tip}");
+            }
+            Err(err) => {
+                warn!("Could not read the chain tip for the initial sync cursor: {err:#}");
+                println!("Could not read the chain tip, syncing from block 0");
+            }
+        }
 
         Ok((wallet, mnemonic))
     }
@@ -260,7 +273,7 @@ impl WalletCore {
                 )
             })?;
 
-        println!(
+        info!(
             "Stored persistent accounts at {}",
             self.storage_path.display()
         );
@@ -450,6 +463,7 @@ impl WalletCore {
         index.track_initialization(account_id);
 
         let poller = self.poller_helm();
+        let bar = indicatif::ProgressBar::new(cursor);
         let mut blocks = std::pin::pin!(poller.poll_block_range(1..=cursor));
         while let Some(block) = blocks.try_next().await? {
             for tx in block.body.transactions {
@@ -461,7 +475,9 @@ impl WalletCore {
                     .key_chain_mut()
                     .sync_updates_via_nullifiers(&pp_tx.message, &mut index);
             }
+            bar.inc(1);
         }
+        bar.finish();
 
         let now = self.storage.last_synced_block();
         // This is a defence-in-depth. Currently during the async update the cursor
@@ -477,13 +493,16 @@ impl WalletCore {
     }
 
     /// Create a shared PDA account from a group's GMS. Returns the `AccountId` and derived keys.
+    /// `None` draws a random identifier, which cannot name an existing account.
     pub async fn create_shared_pda_account(
         &mut self,
         group_name: Label,
         pda_seed: lee_core::program::PdaSeed,
         program_id: lee_core::program::ProgramId,
-        identifier: lee_core::Identifier,
+        identifier: Option<lee_core::Identifier>,
     ) -> Result<SharedAccountInfo> {
+        let catch_up = identifier.is_some();
+        let identifier = identifier.unwrap_or_else(rand::random);
         let holder = self
             .storage
             .key_chain()
@@ -502,7 +521,9 @@ impl WalletCore {
             Some(pda_seed),
             Some(program_id),
         );
-        self.catch_up_shared_account(account_id).await?;
+        if catch_up {
+            self.catch_up_shared_account(account_id).await?;
+        }
 
         Ok(SharedAccountInfo {
             account_id,
@@ -516,7 +537,7 @@ impl WalletCore {
         &mut self,
         group_name: Label,
     ) -> Result<SharedAccountInfo> {
-        self.create_shared_regular_account_with_identifier(group_name, rand::random())
+        self.create_shared_regular_account_inner(group_name, rand::random(), false)
             .await
     }
 
@@ -525,6 +546,17 @@ impl WalletCore {
         &mut self,
         group_name: Label,
         identifier: lee_core::Identifier,
+    ) -> Result<SharedAccountInfo> {
+        self.create_shared_regular_account_inner(group_name, identifier, true)
+            .await
+    }
+
+    /// `catch_up` scans history, which only a caller-supplied identifier can have.
+    async fn create_shared_regular_account_inner(
+        &mut self,
+        group_name: Label,
+        identifier: lee_core::Identifier,
+        catch_up: bool,
     ) -> Result<SharedAccountInfo> {
         let holder = self
             .storage
@@ -538,7 +570,9 @@ impl WalletCore {
         let account_id = AccountId::from((&npk, &vpk, identifier));
 
         self.register_shared_account(account_id, group_name, identifier, None, None);
-        self.catch_up_shared_account(account_id).await?;
+        if catch_up {
+            self.catch_up_shared_account(account_id).await?;
+        }
 
         Ok(SharedAccountInfo {
             account_id,

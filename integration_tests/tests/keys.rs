@@ -64,7 +64,7 @@ async fn sync_private_account_with_non_zero_chain_index() -> Result<()> {
     let tx = fetch_privacy_preserving_tx(ctx.sequencer_client(), tx_hash).await;
 
     // Sync the wallet to claim the new account
-    let command = Command::Account(AccountSubcommand::SyncPrivate {});
+    let command = Command::Account(AccountSubcommand::SyncPrivate { yes: true });
     wallet::cli::execute_subcommand(ctx.wallet_mut(), command).await?;
 
     let new_commitment1 = ctx

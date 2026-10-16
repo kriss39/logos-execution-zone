@@ -210,7 +210,7 @@ wallet token send \
   --amount 500
 echo "Shielded transfer of 500 LEZ: keycard path 6 → $PRIV_RECEIVER"
 
-wallet account sync-private
+wallet account sync-private --yes
 
 sleep 15
 
@@ -234,7 +234,7 @@ wallet token send \
   --amount 300
 echo "Deshielded transfer of 300 LEZ: $PRIV_RECEIVER → keycard path 6"
 
-wallet account sync-private
+wallet account sync-private --yes
 
 sleep 15
 

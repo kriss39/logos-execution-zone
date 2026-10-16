@@ -1,4 +1,8 @@
-use std::{io::Write as _, path::PathBuf, str::FromStr};
+use std::{
+    io::{IsTerminal as _, Write as _},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use anyhow::{Context as _, Result};
 use bip39::Mnemonic;
@@ -95,6 +99,9 @@ pub enum Command {
         #[arg(short, long)]
         /// Indicates, how deep in tree accounts may be. Affects command complexity.
         depth: u32,
+        /// Skip the confirmation prompt.
+        #[arg(short, long)]
+        yes: bool,
     },
     /// Deploy a program.
     DeployProgram { binary_filepath: PathBuf },
@@ -297,11 +304,8 @@ pub async fn execute_subcommand(
 
             SubcommandReturnValue::Empty
         }
-        Command::RestoreKeys { depth } => {
-            let mnemonic = read_mnemonic_from_stdin()?;
-            let password = read_password_from_stdin()?;
-            wallet_core.restore_storage(&mnemonic, &password)?;
-            execute_keys_restoration(wallet_core, depth).await?;
+        Command::RestoreKeys { depth, yes } => {
+            execute_restore_keys(wallet_core, depth, yes).await?;
 
             SubcommandReturnValue::Empty
         }
@@ -337,6 +341,41 @@ pub async fn execute_continuous_run(wallet_core: &mut WalletCore) -> Result<()> 
         wallet_core.sync_to_latest_block().await?;
         tokio::time::sleep(wallet_core.config().seq_poll_timeout).await;
     }
+}
+
+/// Overwrites storage and scans from genesis.
+async fn execute_restore_keys(wallet_core: &mut WalletCore, depth: u32, yes: bool) -> Result<()> {
+    if !yes {
+        let blocks = wallet_core.get_last_block_id().await?;
+        let question = format!(
+            "Restoring overwrites this wallet and scans {blocks} blocks, which may take a while. \
+             Continue?"
+        );
+        if !confirm(&question)? {
+            anyhow::bail!("Restore cancelled");
+        }
+    }
+
+    let mnemonic = read_mnemonic_from_stdin()?;
+    let password = read_password_from_stdin()?;
+
+    wallet_core.restore_storage(&mnemonic, &password)?;
+    execute_keys_restoration(wallet_core, depth).await
+}
+
+/// Asks on stderr; true without a terminal, so scripts never block.
+pub(crate) fn confirm(question: &str) -> Result<bool> {
+    if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+        return Ok(true);
+    }
+
+    eprint!("{question} [y/N]: ");
+    std::io::stderr().flush()?;
+
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+
+    Ok(matches!(answer.trim().to_lowercase().as_str(), "y" | "yes"))
 }
 
 pub fn read_password_from_stdin() -> Result<String> {

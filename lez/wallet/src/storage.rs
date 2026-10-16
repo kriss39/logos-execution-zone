@@ -266,6 +266,16 @@ mod tests {
     }
 
     #[test]
+    fn restore_rewinds_the_sync_cursor_to_genesis() {
+        let (mut storage, mnemonic) = Storage::new("test_pass").unwrap();
+        storage.set_last_synced_block(42);
+
+        storage.restore(&mnemonic, "test_pass").unwrap();
+
+        assert_eq!(storage.last_synced_block(), 0);
+    }
+
+    #[test]
     fn check_label_availability_works() {
         let (mut storage, _) = Storage::new("test_pass").unwrap();
 
