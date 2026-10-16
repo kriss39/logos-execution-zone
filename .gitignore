@@ -17,6 +17,7 @@ result
 
 wallet-ffi/wallet_ffi.h
 bedrock_signing_key
+bedrock/bedrock-deployment-settings-*.yaml
 integration_tests/configs/debug/
 
 .DS_Store
