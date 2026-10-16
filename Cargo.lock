@@ -11369,6 +11369,7 @@ dependencies = [
  "kameo",
  "kameo_actors",
  "lee",
+ "libp2p",
  "log",
  "metrics-exporter-prometheus",
  "programs",
