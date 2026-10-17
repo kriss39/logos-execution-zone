@@ -1,7 +1,7 @@
 //! A [`MockBedrockActor`] serving a canned channel.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
 };
 
@@ -17,7 +17,8 @@ use sequencer_bedrock_actor::{
     error::Error,
     mock::MockBedrockActor,
     protocol::{
-        AccreditedKeys, BoxStream, CreateChannel, PublishBlock, PublishOutcome, ReadChannel,
+        AccreditedKeys, BoxStream, CreateChannel, PreparePin, PreparedPin, PublishBlock,
+        PublishOutcome, PublishPin, ReadChannel,
     },
 };
 
@@ -99,43 +100,62 @@ impl CannedChannel {
                 land(&tip, publish_fails, &genesis, None, Vec::new())
             }
         });
-        mock.expect_handle_publish_block().returning(
+        mock.expect_handle_publish_block().returning({
+            let tip = Arc::clone(&tip);
+            let pins = Arc::clone(&pins);
             move |PublishBlock {
                       block,
                       withdrawals,
                       parent,
                       expected_seq: _,
-                      pinned_deposit_notes,
                   },
                   _ctx| {
-                if !pinned_deposit_notes.is_empty() && parent.is_none() {
-                    return Err(Error::PinnedDepositsWithoutParent);
-                }
-                if let Some(missing) = pinned_deposit_notes
-                    .iter()
-                    .find(|note| !channel_notes.contains(note))
-                {
-                    return Err(Error::DepositNoteNotOnBranch(*missing));
-                }
-                let current = *tip.lock().expect("channel tip lock poisoned");
-                if let Some(parent) = parent
-                    && current.is_some_and(|current| current != parent)
-                {
-                    return Err(Error::SubmitSignedTransactionFailed(anyhow!(
-                        "Block {} is chained on an entry that is no longer the channel tip",
-                        block.header.block_id
-                    )));
-                }
-                let outcome = land(
+                let outcome = publish(
                     &tip,
                     publish_fails,
                     &block,
                     parent,
                     mock_released_notes(&withdrawals),
                 )?;
-                pins.lock()
-                    .expect("pins lock poisoned")
-                    .push(pinned_deposit_notes);
+                pins.lock().expect("pins lock poisoned").push(Vec::new());
+                Ok(outcome)
+            }
+        });
+        let prepared = Arc::new(Mutex::new(HashMap::new()));
+        mock.expect_handle_prepare_pin().returning({
+            let prepared = Arc::clone(&prepared);
+            move |PreparePin {
+                      block,
+                      parent,
+                      notes,
+                      expected_seq: _,
+                  },
+                  _ctx| {
+                if let Some(missing) = notes.iter().find(|note| !channel_notes.contains(note)) {
+                    return Err(Error::DepositNoteNotOnBranch(*missing));
+                }
+                let msg_id = mock_msg_of(&block);
+                prepared
+                    .lock()
+                    .expect("prepared pins lock poisoned")
+                    .insert(msg_id, (block, notes));
+                Ok(PreparedPin::mocked(msg_id, parent))
+            }
+        });
+        mock.expect_handle_publish_pin().returning(
+            move |PublishPin {
+                      prepared: pin,
+                      signatures: _,
+                      expected_seq: _,
+                  },
+                  _ctx| {
+                let (block, notes) = prepared
+                    .lock()
+                    .expect("prepared pins lock poisoned")
+                    .remove(&pin.msg_id())
+                    .expect("only a prepared pin is published");
+                let outcome = publish(&tip, publish_fails, &block, Some(pin.parent()), Vec::new())?;
+                pins.lock().expect("pins lock poisoned").push(notes);
                 Ok(outcome)
             },
         );
@@ -154,6 +174,27 @@ fn history_after(
         .cloned()
         .collect();
     Box::pin(futures::stream::iter(messages))
+}
+
+/// Lands `block` unless it is chained on an entry that is no longer the tip,
+/// as L1 refuses it.
+fn publish(
+    tip: &Mutex<Option<MsgId>>,
+    publish_fails: bool,
+    block: &Block,
+    parent: Option<MsgId>,
+    released_notes: Vec<NoteId>,
+) -> Result<PublishOutcome> {
+    let current = *tip.lock().expect("channel tip lock poisoned");
+    if let Some(parent) = parent
+        && current.is_some_and(|current| current != parent)
+    {
+        return Err(Error::SubmitSignedTransactionFailed(anyhow!(
+            "Block {} is chained on an entry that is no longer the channel tip",
+            block.header.block_id
+        )));
+    }
+    land(tip, publish_fails, block, parent, released_notes)
 }
 
 /// Moves the channel tip to `block` and reports what its publish produced,

@@ -8,8 +8,9 @@ use crate::{
     protocol::{
         AccreditedKeys, BoxStream, ChangeChannelConfig, CheckChannelExists, CheckIsOurTurn,
         CreateChannel, GetAccreditedKeys, GetChannelId, GetChannelIdReply, GetChannelNotes,
-        GetChannelTipMessageId, GetChannelTipSlot, MsgId, NoteId, PrepareConfig,
-        PreparedChannelConfig, PublishBlock, PublishOutcome, ReadChannel, Slot, ZoneMessage,
+        GetChannelTipMessageId, GetChannelTipSlot, MsgId, NoteId, PrepareConfig, PreparePin,
+        PreparedChannelConfig, PreparedPin, PublishBlock, PublishOutcome, PublishPin, ReadChannel,
+        Slot, ZoneMessage,
     },
 };
 
@@ -17,6 +18,8 @@ pub trait BedrockActorTrait:
     Actor<Args = Self, Error = Error>
     + Message<CreateChannel, Reply = Result<PublishOutcome>>
     + Message<PublishBlock, Reply = Result<PublishOutcome>>
+    + Message<PreparePin, Reply = Result<PreparedPin>>
+    + Message<PublishPin, Reply = Result<PublishOutcome>>
     + Message<PrepareConfig, Reply = Result<PreparedChannelConfig>>
     + Message<ChangeChannelConfig, Reply = Result<()>>
     + Message<CheckChannelExists, Reply = Result<bool>>

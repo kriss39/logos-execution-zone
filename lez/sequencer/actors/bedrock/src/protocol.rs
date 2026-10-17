@@ -4,6 +4,7 @@ pub use chain_state::ChannelEntry;
 use common::block::Block;
 use kameo::Reply;
 pub use logos_blockchain_core::mantle::NoteId;
+use logos_blockchain_core::mantle::{OpProof, transactions::Ops};
 pub use logos_blockchain_key_management_system_service::keys::Ed25519PublicKey;
 pub use logos_blockchain_zone_sdk::{
     Slot, ZoneMessage,
@@ -13,7 +14,7 @@ pub use logos_blockchain_zone_sdk::{
         SequencerCheckpoint as Checkpoint, WithdrawArg, WithdrawInfo,
     },
 };
-pub use sequencer_channel_config_actor::protocol::ConfigTarget;
+pub use sequencer_channel_signing_actor::protocol::ConfigTarget;
 pub use sequencer_stake_core::ChannelParams;
 
 /// A boxed, pinned, Send stream.
@@ -153,10 +154,69 @@ pub struct PublishBlock {
     ///
     /// [`None`] will omit the check.
     pub expected_seq: Option<ChannelSeq>,
-    /// Deposited channel notes the block mints from. The inscription is bundled
-    /// with a transfer re-creating them unchanged, so it lands only where they
-    /// exist. Requires `parent`.
-    pub pinned_deposit_notes: Vec<NoteId>,
+}
+
+/// Funds `block` chained on `parent` and bundled with a transfer re-creating
+/// `notes` unchanged, so it lands only where they exist; submits nothing.
+pub struct PreparePin {
+    pub block: Block,
+    pub parent: MsgId,
+    /// Deposited channel notes the block mints from.
+    pub notes: Vec<NoteId>,
+    /// As in [`PublishBlock::expected_seq`].
+    pub expected_seq: Option<ChannelSeq>,
+}
+
+/// A funded pinned block, short of the signatures its transfer needs.
+pub struct PreparedPin {
+    pub(crate) tx: Ops,
+    pub(crate) msg_id: MsgId,
+    pub(crate) parent: MsgId,
+    /// Proof of the fee transfer the wallet appended, if it appended one.
+    #[cfg_attr(
+        not(feature = "actor"),
+        expect(dead_code, reason = "Only the actor publishes a pin")
+    )]
+    pub(crate) fee_proof: Option<OpProof>,
+}
+
+impl PreparedPin {
+    /// The transaction the transfer's signers sign.
+    #[must_use]
+    pub const fn tx(&self) -> &Ops {
+        &self.tx
+    }
+
+    #[must_use]
+    pub const fn msg_id(&self) -> MsgId {
+        self.msg_id
+    }
+
+    #[must_use]
+    pub const fn parent(&self) -> MsgId {
+        self.parent
+    }
+
+    /// A pin conjured outside the actor, for a mocked channel to serve.
+    #[cfg(feature = "mock")]
+    #[must_use]
+    pub const fn mocked(msg_id: MsgId, parent: MsgId) -> Self {
+        Self {
+            tx: Ops::empty(),
+            msg_id,
+            parent,
+            fee_proof: None,
+        }
+    }
+}
+
+/// Publishes a prepared pin with exactly the channel's transfer threshold of
+/// signatures.
+pub struct PublishPin {
+    pub prepared: PreparedPin,
+    pub signatures: Vec<IndexedSignature>,
+    /// As in [`PublishBlock::expected_seq`].
+    pub expected_seq: Option<ChannelSeq>,
 }
 
 /// Outcome of a publish operation.

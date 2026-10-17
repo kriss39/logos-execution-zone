@@ -18,8 +18,9 @@ use crate::{
     protocol::{
         AccreditedKeys, BoxStream, ChangeChannelConfig, CheckChannelExists, CheckIsOurTurn,
         CreateChannel, GetAccreditedKeys, GetChannelId, GetChannelIdReply, GetChannelNotes,
-        GetChannelTipMessageId, GetChannelTipSlot, MsgId, NoteId, PrepareConfig,
-        PreparedChannelConfig, PublishBlock, PublishOutcome, ReadChannel, Slot, ZoneMessage,
+        GetChannelTipMessageId, GetChannelTipSlot, MsgId, NoteId, PrepareConfig, PreparePin,
+        PreparedChannelConfig, PreparedPin, PublishBlock, PublishOutcome, PublishPin, ReadChannel,
+        Slot, ZoneMessage,
     },
 };
 
@@ -34,6 +35,18 @@ mockall::mock! {
         pub fn handle_publish_block(
             &mut self,
             msg: PublishBlock,
+            ctx: &mut Context<Self, Result<PublishOutcome>>
+        ) -> Result<PublishOutcome>;
+
+        pub fn handle_prepare_pin(
+            &mut self,
+            msg: PreparePin,
+            ctx: &mut Context<Self, Result<PreparedPin>>
+        ) -> Result<PreparedPin>;
+
+        pub fn handle_publish_pin(
+            &mut self,
+            msg: PublishPin,
             ctx: &mut Context<Self, Result<PublishOutcome>>
         ) -> Result<PublishOutcome>;
 
@@ -156,6 +169,30 @@ impl Message<PublishBlock> for MockBedrockActor {
         ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         self.handle_publish_block(msg, ctx)
+    }
+}
+
+impl Message<PreparePin> for MockBedrockActor {
+    type Reply = Result<PreparedPin>;
+
+    async fn handle(
+        &mut self,
+        msg: PreparePin,
+        ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.handle_prepare_pin(msg, ctx)
+    }
+}
+
+impl Message<PublishPin> for MockBedrockActor {
+    type Reply = Result<PublishOutcome>;
+
+    async fn handle(
+        &mut self,
+        msg: PublishPin,
+        ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.handle_publish_pin(msg, ctx)
     }
 }
 
