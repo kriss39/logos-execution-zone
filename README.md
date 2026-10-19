@@ -248,6 +248,10 @@ defaults. To run only Bedrock, use `just run-bedrock`.
 
 With that you can send transactions from local wallet to the Sequencer running inside Docker using `lez/wallet/configs/debug` as well as exploring blocks by opening `http://localhost:8080`.
 
-## Caution for local image builds
-
-If you're going to build sequencer image locally you should better adjust default docker settings and set `defaultKeepStorage` at least `25GB` so that it can keep layers properly cached.
+> [!CAUTION]
+>
+> ## Caution for local image builds
+>
+> If you're going to build sequencer image locally you should better adjust default docker settings and set `defaultKeepStorage` at least `25GB` so that it can keep layers properly cached.
+>
+> `docker compose up` builds the sequencer and indexer images in parallel, which needs more memory than Docker's default. Give Docker around 14GB, otherwise the build fails with `cannot allocate memory`.
