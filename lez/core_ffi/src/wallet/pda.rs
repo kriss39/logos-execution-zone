@@ -1,11 +1,9 @@
 use lee::AccountId;
+use lee_core::encryption::MlKem768EncapsulationKey;
 
 use crate::{
     error::FfiOperationError,
-    primitives::{
-        errors::PrimitiveOperationStatus,
-        types::{FfiBytes32, FfiIdentifier, FfiNullifierPublicKey, FfiPdaSeed, vectors::FfiVecU8},
-    },
+    primitives::types::{FfiBytes32, FfiNullifierPublicKey, FfiPdaSeed},
 };
 
 /// Produce account id for public PDA.
@@ -35,7 +33,6 @@ pub extern "C" fn wallet_ffi_account_id_for_public_pda(
 ///   `wallet_ffi_get_private_account_keys`)
 /// - `viewing_public_key_len`: length of a `viewing_public_key` (can be obtained from
 ///   `wallet_ffi_get_private_account_keys`), must be `1184`
-/// - `identifier`: 32-byte opaque identifier
 /// - `account_id`: valid pointer to `FfiBytes32`
 ///
 /// # Returns
@@ -50,20 +47,22 @@ pub unsafe extern "C" fn wallet_ffi_account_id_for_private_pda(
     program_account_id: FfiBytes32,
     pda_seed: FfiPdaSeed,
     npk: FfiNullifierPublicKey,
-    viewing_public_key: FfiVecU8,
-    identifier: FfiIdentifier,
+    viewing_public_key: *const u8,
+    viewing_public_key_len: usize,
     account_id: *mut FfiBytes32,
 ) -> FfiOperationError {
-    if viewing_public_key.entries.is_null() {
+    if viewing_public_key.is_null() {
         return FfiOperationError::NullPointer;
     }
+    let viewing_public_key =
+        unsafe { std::slice::from_raw_parts(viewing_public_key, viewing_public_key_len) }.to_vec();
 
     let std_npk = npk.into();
 
-    let vpk: Result<_, PrimitiveOperationStatus> = viewing_public_key.try_into();
+    let vpk = MlKem768EncapsulationKey::from_bytes(viewing_public_key);
 
     if vpk.is_err() {
-        return vpk.err().unwrap().into();
+        return FfiOperationError::InvalidArgument;
     }
 
     unsafe {
@@ -72,7 +71,6 @@ pub unsafe extern "C" fn wallet_ffi_account_id_for_private_pda(
             &pda_seed.into(),
             &std_npk,
             &vpk.unwrap(),
-            identifier.into(),
         )
         .into();
     }
@@ -87,7 +85,7 @@ mod tests {
 
     use crate::{
         error::FfiOperationError,
-        primitives::types::FfiBytes32,
+        primitives::types::{FfiBytes32, vectors::FfiVecU8},
         wallet::pda::{
             wallet_ffi_account_id_for_private_pda, wallet_ffi_account_id_for_public_pda,
         },
@@ -111,12 +109,10 @@ mod tests {
         let pda_seed = PdaSeed::new([42; 32]);
         let vpk = ViewingPublicKey::from_bytes(vec![43; 1184]).unwrap();
         let npk = NullifierPublicKey([44; 32]);
-        let identifier = lee_core::Identifier::new([100; 32]);
 
-        let pda_id =
-            AccountId::for_private_pda(&program_account_id, &pda_seed, &npk, &vpk, identifier);
+        let pda_id = AccountId::for_private_pda(&program_account_id, &pda_seed, &npk, &vpk);
 
-        let ffi_vpk = vpk.to_bytes().to_vec().into();
+        let ffi_vpk: FfiVecU8 = vpk.to_bytes().to_vec().into();
 
         let mut ffi_pda_id_base = FfiBytes32 { data: [0; 32] };
         let ffi_pda_id = &raw mut ffi_pda_id_base;
@@ -126,8 +122,8 @@ mod tests {
                 program_account_id.into(),
                 pda_seed.into(),
                 npk.into(),
-                ffi_vpk,
-                identifier.into(),
+                ffi_vpk.entries,
+                1184,
                 ffi_pda_id,
             )
         };

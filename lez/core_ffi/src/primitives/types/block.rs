@@ -50,7 +50,7 @@ impl TryFrom<FfiBlock> for Block {
         let std_vec_ffi_body: Vec<_> = body.into();
 
         for ffi_tx in std_vec_ffi_body {
-            std_vec.push(ffi_tx.try_into()?)
+            std_vec.push(ffi_tx.try_into()?);
         }
 
         Ok(Self {

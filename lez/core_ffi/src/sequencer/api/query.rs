@@ -7,15 +7,14 @@ use sequencer_storage_actor::{
     actor::event_filter::{EventRecord, MAX_EVENT_QUERY_RESPONSE_BYTES, Selector, record_charge},
     protocol::{GetBlockEvents, GetEventFilter, GetTxHashToBlockIdMapItem},
 };
-use wallet::WalletSequencerClient;
+use wallet::WalletSequencerClient as _;
 
 use crate::{
     error::FfiOperationError,
     primitives::{
         result::PointerResult,
         types::{
-            FfiAccountId, FfiBlockId, FfiCommitment, FfiHashType, FfiOption, FfiProofsAndRoot,
-            FfiSelector, FfiVec,
+            FfiAccountId, FfiBlockId, FfiHashType, FfiOption, FfiSelector, FfiVec,
             account::FfiAccount,
             block::{FfiBlock, FfiBlockOpt},
             event::FfiEventRecord,
@@ -277,7 +276,7 @@ pub unsafe extern "C" fn sequencer_ffi_query_block_by_hash(
 ///
 /// # Returns
 ///
-/// A `PointerResult<FfiAccount, FfiOperationError>` indicating success or failure.
+/// A `PointerResult<FfiOption<FfiAccount>, OperationStatus>` indicating success or failure.
 ///
 /// # Safety
 ///
@@ -287,7 +286,7 @@ pub unsafe extern "C" fn sequencer_ffi_query_block_by_hash(
 pub unsafe extern "C" fn sequencer_ffi_query_account(
     sequencer: *const SequencerServiceFFI,
     account_id: FfiAccountId,
-) -> PointerResult<FfiAccount, FfiOperationError> {
+) -> PointerResult<FfiOption<FfiAccount>, FfiOperationError> {
     if sequencer.is_null() {
         log::error!("Attempted to query a null sequencer pointer. This is a bug. Aborting.");
         return PointerResult::from_error(FfiOperationError::NullPointer);
@@ -305,58 +304,10 @@ pub unsafe extern "C" fn sequencer_ffi_query_account(
             log::error!("Failed to query account: {e:#}");
             PointerResult::from_error(FfiOperationError::QueryError)
         },
-        |account| PointerResult::from_value(account.into()),
-    )
-}
-
-/// Query the prrofs and root for commitments.
-///
-/// # Arguments
-///
-/// - `sequencer`: A pointer to the [`SequencerServiceFFI`] instance to be queried.
-/// - `commitments`: valid pointer into array of `FfiCommitment`.
-/// - `commitments_len`: length of a commitments array.
-///
-/// # Returns
-///
-/// A `PointerResult<FfiProofsAndRoot, FfiOperationError>` indicating success or failure.
-///
-/// # Safety
-///
-/// The caller must ensure that:
-/// - `sequencer` is a valid pointer to a [`SequencerServiceFFI`] instance.
-/// - `commitments` must be valid pointer to a [`FfiCommitment`].
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn sequencer_ffi_query_proofs_and_root(
-    sequencer: *const SequencerServiceFFI,
-    commitments: *const FfiCommitment,
-    commitments_len: usize,
-) -> PointerResult<FfiProofsAndRoot, FfiOperationError> {
-    if sequencer.is_null() {
-        log::error!("Attempted to query a null sequencer pointer. This is a bug. Aborting.");
-        return PointerResult::from_error(FfiOperationError::NullPointer);
-    }
-    if commitments.is_null() {
-        log::error!("Provided a null commitments pointer. This is a bug. Aborting.");
-        return PointerResult::from_error(FfiOperationError::NullPointer);
-    }
-
-    let sequencer = unsafe { &*sequencer };
-    let sequencer_wrap = SequencerServiceFFIWrapper::wrap(sequencer);
-    let commitments =
-        unsafe { FfiVec::<FfiCommitment>::collect_from_ptr(commitments, commitments_len) };
-    let std_vec: Vec<_> = commitments.into();
-
-    let proofs_and_roots_resp = sequencer.runtime().block_on(
-        sequencer_wrap.get_proofs_and_root(std_vec.into_iter().map(Into::into).collect()),
-    );
-
-    proofs_and_roots_resp.map_or_else(
-        |e| {
-            log::error!("Failed to query prrofs and root: {e:#}");
-            PointerResult::from_error(FfiOperationError::QueryError)
+        |account| {
+            let opt_ffi_acc: Option<FfiAccount> = account.map(Into::into);
+            PointerResult::from_value(opt_ffi_acc.into())
         },
-        |proofs_and_roots| PointerResult::from_value(proofs_and_roots.into()),
     )
 }
 
@@ -375,6 +326,10 @@ pub unsafe extern "C" fn sequencer_ffi_query_proofs_and_root(
 ///
 /// The caller must ensure that:
 /// - `sequencer` is a valid pointer to a [`SequencerServiceFFI`] instance.
+/// - `transaction` is initialized throughout, inactive payloads included: a private body's
+///   `public_root` without `has_public_root`, and the `delivery` of an `EndPrivateSubtree` or
+///   `EndPublicSubtree` step, are converted and freed too, so they must be empty, not
+///   uninitialized.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sequencer_ffi_send_transaction(
     sequencer: *const SequencerServiceFFI,

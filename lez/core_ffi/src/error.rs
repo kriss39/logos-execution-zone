@@ -4,7 +4,7 @@
 
 use std::str::Utf8Error;
 
-use crate::primitives::{errors::PrimitiveOperationStatus, result::PointerResult};
+use crate::primitives::errors::PrimitiveOperationStatus;
 
 /// Error codes returned by FFI functions.
 #[repr(C)]
@@ -60,6 +60,10 @@ pub enum FfiOperationError {
     NotSupported = 22,
     /// Maximum response size exceeded.
     ResponseTooBig = 23,
+    /// Message not found.
+    MessageNotFound = 24,
+    /// The password does not open the wallet storage, or the storage is corrupted.
+    WrongPassword = 25,
     /// Internal error (catch-all).
     InternalError = 99,
 }
@@ -105,14 +109,4 @@ impl From<PrimitiveOperationStatus> for FfiOperationError {
 )]
 pub fn print_error(msg: impl Into<String>) {
     eprintln!("[ffi] {}", msg.into());
-}
-
-impl<Type> PointerResult<Type, FfiOperationError> {
-    pub unsafe fn into_boxed(self) -> Result<Box<Type>, FfiOperationError> {
-        if self.error.is_error() {
-            return Err(self.error);
-        }
-
-        Ok(unsafe { Box::from_raw(self.value) })
-    }
 }

@@ -3,13 +3,13 @@ use std::ffi::c_char;
 use core_ffi::{
     error,
     primitives::types::{
-        FfiBytes32, FfiIdentifier, FfiPrivateAccountKeys, FfiPublicAccountKey, account::FfiAccount,
+        FfiBytes32, FfiPrivateAccountKeys, FfiPublicAccountKey, account::FfiAccount,
     },
     sequencer::SequencerServiceFFI,
     wallet::{
         FfiAccountIdWithPrivacy, FfiAccountIdentity, FfiAccountList, FfiAccountMention,
-        FfiTransferResult, WalletHandle,
-        generic_transaction::{FfiProgramWithDependencies, FfiTransactionResult},
+        FfiPendingMessageList, FfiTransferResult, WalletHandle,
+        generic_transaction::{FfiProgramCatalog, FfiTransactionResult},
         label::{AccountIdResolvedFromLabel, LabelAvailability, LabelList},
         lifecycle::FfiCreateWalletOutput,
     },
@@ -27,7 +27,9 @@ unsafe extern "C" {
         config_path: *const c_char,
         storage_path: *const c_char,
         sequencer: *const SequencerServiceFFI,
-    ) -> *mut WalletHandle;
+        password: *const c_char,
+        out_handle: *mut *mut WalletHandle,
+    ) -> error::FfiOperationError;
 
     pub fn wallet_ffi_destroy(handle: *mut WalletHandle);
 
@@ -50,7 +52,6 @@ unsafe extern "C" {
         handle: *mut WalletHandle,
         key_chain_json: *const c_char,
         chain_index: *const c_char,
-        identifier: *const FfiIdentifier,
         account_state_json: *const c_char,
     ) -> error::FfiOperationError;
 
@@ -87,6 +88,8 @@ unsafe extern "C" {
         out_account: *mut FfiAccount,
     ) -> error::FfiOperationError;
 
+    pub fn wallet_ffi_free_account_data(account: *mut FfiAccount);
+
     pub fn wallet_ffi_get_public_account_key(
         handle: *mut WalletHandle,
         account_id: *const FfiBytes32,
@@ -99,7 +102,11 @@ unsafe extern "C" {
         out_keys: *mut FfiPrivateAccountKeys,
     ) -> error::FfiOperationError;
 
+    pub fn wallet_ffi_free_private_account_keys(keys: *mut FfiPrivateAccountKeys);
+
     pub fn wallet_ffi_account_id_to_base58(account_id: *const FfiBytes32) -> *mut std::ffi::c_char;
+
+    pub fn wallet_ffi_free_string(ptr: *mut c_char);
 
     pub fn wallet_ffi_account_id_from_base58(
         base58_str: *const std::ffi::c_char,
@@ -118,7 +125,6 @@ unsafe extern "C" {
         handle: *mut WalletHandle,
         from: *const FfiBytes32,
         to_keys: *const FfiPrivateAccountKeys,
-        to_identifier: *const FfiIdentifier,
         amount: *const [u8; 16],
         key_path: *const c_char,
         out_result: *mut FfiTransferResult,
@@ -136,12 +142,24 @@ unsafe extern "C" {
         handle: *mut WalletHandle,
         from: *const FfiBytes32,
         to_keys: *const FfiPrivateAccountKeys,
-        to_identifier: *const FfiIdentifier,
         amount: *const [u8; 16],
         out_result: *mut FfiTransferResult,
     ) -> error::FfiOperationError;
 
     pub fn wallet_ffi_free_transfer_result(result: *mut FfiTransferResult);
+
+    pub fn wallet_ffi_list_pending_messages(
+        handle: *mut WalletHandle,
+        out_list: *mut FfiPendingMessageList,
+    ) -> error::FfiOperationError;
+
+    pub fn wallet_ffi_free_pending_message_list(list: *mut FfiPendingMessageList);
+
+    pub fn wallet_ffi_receive_pending_message(
+        handle: *mut WalletHandle,
+        position: u64,
+        out_result: *mut FfiTransferResult,
+    ) -> error::FfiOperationError;
 
     // pub fn wallet_ffi_bridge_withdraw(
     //     handle: *mut WalletHandle,
@@ -166,7 +184,6 @@ unsafe extern "C" {
     pub fn wallet_ffi_restore_data(
         handle: *mut WalletHandle,
         mnemonic: *const c_char,
-        password: *const c_char,
         depth: u32,
     ) -> error::FfiOperationError;
 
@@ -180,9 +197,9 @@ unsafe extern "C" {
         handle: *mut WalletHandle,
         account_mentions: *const FfiAccountMention,
         account_mentions_size: usize,
-        instruction_data: *const u8,
-        instruction_data_size: usize,
-        program_account_id: FfiBytes32,
+        root_mention: usize,
+        message: *const u8,
+        message_size: usize,
         payer: *const FfiBytes32,
         out_result: *mut FfiTransactionResult,
     ) -> error::FfiOperationError;
@@ -197,9 +214,10 @@ unsafe extern "C" {
         handle: *mut WalletHandle,
         account_mentions: *const FfiAccountMention,
         account_mentions_size: usize,
-        instruction_data: *const u8,
-        instruction_data_size: usize,
-        program_with_dependencies: *const FfiProgramWithDependencies,
+        root_mention: usize,
+        message: *const u8,
+        message_size: usize,
+        programs: *const FfiProgramCatalog,
         out_result: *mut FfiTransactionResult,
     ) -> error::FfiOperationError;
 

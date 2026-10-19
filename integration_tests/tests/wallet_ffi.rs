@@ -25,13 +25,13 @@ use common::HashType;
 use core_ffi::{
     error,
     primitives::types::{
-        FfiBytes32, FfiIdentifier, FfiPrivateAccountKeys, FfiPublicAccountKey, account::FfiAccount,
+        FfiBytes32, FfiPrivateAccountKeys, FfiPublicAccountKey, account::FfiAccount,
     },
     sequencer::SequencerServiceFFI,
     wallet::{
         FfiAccountIdWithPrivacy, FfiAccountIdentity, FfiAccountList, FfiAccountMention,
-        FfiTransferResult, WalletHandle,
-        generic_transaction::{FfiDependency, FfiProgramWithDependencies, FfiTransactionResult},
+        FfiPendingMessageList, FfiTransferResult, WalletHandle,
+        generic_transaction::{FfiDependency, FfiProgramCatalog, FfiTransactionResult},
         lifecycle::FfiCreateWalletOutput,
     },
 };
@@ -43,9 +43,7 @@ use integration_tests::{
     },
 };
 use lee::{Account, AccountId, PrivateKey, PublicKey, program::Program};
-use lee_core::{
-    Identifier, native_token::NATIVE_TOKEN_PROGRAM_ID, program::PROGRAM_LOADER_ACCOUNT_ID,
-};
+use lee_core::{native_token::NATIVE_TOKEN_PROGRAM_ID, program::PROGRAM_LOADER_ACCOUNT_ID};
 use wallet::{DEFAULT_MAX_FEE, account::HumanReadableAccount};
 
 /// Blocks until the transfer is in a block, panicking if it never lands.
@@ -65,6 +63,38 @@ fn wait_for_inclusion(handle: *mut WalletHandle, result: &FfiTransferResult) {
         .unwrap();
     }
     assert!(is_included, "the transfer must land");
+}
+
+/// Receives every message pending for the wallet's accounts, syncing once each receipt lands so a
+/// later one to the same account builds on it.
+fn receive_pending(handle: *mut WalletHandle) {
+    let mut list = FfiPendingMessageList::default();
+    let positions: Vec<u64> = unsafe {
+        wallet_ffi_list_pending_messages(handle, &raw mut list).unwrap();
+        let positions = if list.count == 0 {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(list.entries, list.count)
+                .iter()
+                .map(|pending| pending.position)
+                .collect()
+        };
+        wallet_ffi_free_pending_message_list(&raw mut list);
+        positions
+    };
+    for position in positions {
+        let mut receipt = FfiTransferResult::default();
+        unsafe {
+            wallet_ffi_receive_pending_message(handle, position, &raw mut receipt).unwrap();
+        }
+        wait_for_inclusion(handle, &receipt);
+        unsafe {
+            wallet_ffi_free_transfer_result(&raw mut receipt);
+            let mut current_height = 0;
+            wallet_ffi_get_current_block_height(handle, &raw mut current_height).unwrap();
+            wallet_ffi_sync_to_block(handle, current_height).unwrap();
+        }
+    }
 }
 
 /// Reads an account's balance through the FFI, panicking on error.
@@ -146,16 +176,12 @@ fn new_wallet_ffi_with_test_context_config(
         let chain_index_ptr = chain_index
             .as_ref()
             .map_or(std::ptr::null(), |value| value.as_ptr());
-        let identifier = FfiIdentifier {
-            data: account.kind.identifier().into_value(),
-        };
 
         unsafe {
             wallet_ffi_import_private_account(
                 create_wallet_result.wallet,
                 key_chain_json.as_ptr(),
                 chain_index_ptr,
-                &raw const identifier,
                 account_state_json.as_ptr(),
             )
         }
@@ -168,13 +194,27 @@ fn new_wallet_ffi_with_test_context_config(
 fn load_existing_ffi_wallet(
     home: &Path,
     sequencer: *const SequencerServiceFFI,
-) -> Result<*mut WalletHandle> {
+    password: &str,
+) -> Result<Result<*mut WalletHandle, error::FfiOperationError>> {
     let config_path = home.join("wallet_config.json");
     let storage_path = home.join("storage.json");
     let config_path = CString::new(config_path.to_str().unwrap())?;
     let storage_path = CString::new(storage_path.to_str().unwrap())?;
+    let password = CString::new(password)?;
+    let mut handle = std::ptr::null_mut();
 
-    Ok(unsafe { wallet_ffi_open(config_path.as_ptr(), storage_path.as_ptr(), sequencer) })
+    let result = unsafe {
+        wallet_ffi_open(
+            config_path.as_ptr(),
+            storage_path.as_ptr(),
+            sequencer,
+            password.as_ptr(),
+            &raw mut handle,
+        )
+    };
+    Ok((result == error::FfiOperationError::Success)
+        .then_some(handle)
+        .ok_or(result))
 }
 
 #[test]
@@ -184,8 +224,10 @@ fn wallet_ffi_create_public_accounts() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
 
     let n_accounts = 10;
 
@@ -241,8 +283,11 @@ fn wallet_ffi_create_private_accounts() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let n_accounts = 10;
     // Create `n_accounts` receiving keys with wallet FFI
     let new_npks_ffi = unsafe {
@@ -287,8 +332,11 @@ fn wallet_ffi_save_and_load_persistent_storage() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     // Create a receiving key and save
     let first_npk = unsafe {
@@ -305,9 +353,19 @@ fn wallet_ffi_save_and_load_persistent_storage() -> Result<()> {
         npk
     };
 
+    assert_eq!(
+        load_existing_ffi_wallet(home.path(), sequencer_ffi_res.value, "wrong password")?,
+        Err(error::FfiOperationError::WrongPassword)
+    );
+
     // After loading, creating a new key should yield a different NPK (state was persisted)
     let second_npk = unsafe {
-        let wallet_ffi_handle = load_existing_ffi_wallet(home.path(), sequencer_ffi_res.value)?;
+        let wallet_ffi_handle = load_existing_ffi_wallet(
+            home.path(),
+            sequencer_ffi_res.value,
+            ctx.ctx().wallet_password(),
+        )?
+        .unwrap();
         let mut out_keys = FfiPrivateAccountKeys::default();
         wallet_ffi_create_private_accounts_key(wallet_ffi_handle, &raw mut out_keys).unwrap();
         let npk = out_keys.nullifier_public_key.data;
@@ -338,8 +396,11 @@ fn test_wallet_ffi_list_accounts() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     // Create the wallet FFI and track which account IDs were created as public/private
     let (wallet_ffi_handle, created_public_ids) = unsafe {
         let home = tempfile::tempdir()?;
@@ -465,8 +526,11 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let account_id: AccountId = ctx.ctx().existing_public_accounts()[0];
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
@@ -483,7 +547,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
             &raw mut out_account,
         )
         .unwrap();
-        out_account.try_into().unwrap()
+        (&out_account).try_into().unwrap()
     };
 
     assert_eq!(
@@ -503,7 +567,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
             &raw mut out_balance_only,
         )
         .unwrap();
-        out_balance_only.try_into().unwrap()
+        (&out_balance_only).try_into().unwrap()
     };
 
     assert_eq!(
@@ -522,10 +586,10 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
             &raw mut out_program_full,
         )
         .unwrap();
-        out_program_full.try_into().unwrap()
+        (&out_program_full).try_into().unwrap()
     };
-    let expected_shard = program_full.data.shards[&PROGRAM_LOADER_ACCOUNT_ID].clone();
-    assert!(!expected_shard.is_empty());
+    let expected_actor_state = program_full.data.actor_states[&PROGRAM_LOADER_ACCOUNT_ID].clone();
+    assert!(!expected_actor_state.is_empty());
 
     let mut out_program_view = FfiAccount::default();
     let program_view: Account = unsafe {
@@ -538,7 +602,7 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
             &raw mut out_program_view,
         )
         .unwrap();
-        out_program_view.try_into().unwrap()
+        (&out_program_view).try_into().unwrap()
     };
 
     assert_eq!(
@@ -546,26 +610,54 @@ fn test_wallet_ffi_get_account_public() -> Result<()> {
         Account::funded(program_full.data.native_balance().unwrap()).data
     );
 
-    let mut out_named_shard = FfiAccount::default();
-    let named_shard: Account = unsafe {
+    let mut out_named_actor_state = FfiAccount::default();
+    let named_actor_state: Account = unsafe {
         let ffi_program_account = FfiBytes32::from(program_id);
         let ffi_program_id = FfiBytes32::from(PROGRAM_LOADER_ACCOUNT_ID);
         wallet_ffi_get_account_view(
             wallet_ffi_handle,
             &raw const ffi_program_account,
             &raw const ffi_program_id,
-            &raw mut out_named_shard,
+            &raw mut out_named_actor_state,
         )
         .unwrap();
-        out_named_shard.try_into().unwrap()
+        (&out_named_actor_state).try_into().unwrap()
     };
 
     assert_eq!(
-        named_shard.data,
+        named_actor_state.data,
         program_full.data.project([PROGRAM_LOADER_ACCOUNT_ID])
     );
 
+    let absent_id = FfiBytes32::from(AccountId::new([0xAB; 32]));
+    let ffi_native_program = FfiBytes32::from_account_id(&NATIVE_TOKEN_PROGRAM_ID);
+    let mut out_absent = FfiAccount::default();
     unsafe {
+        assert_eq!(
+            wallet_ffi_get_account_public(
+                wallet_ffi_handle,
+                &raw const absent_id,
+                &raw mut out_absent
+            ),
+            error::FfiOperationError::AccountNotFound
+        );
+        assert_eq!(
+            wallet_ffi_get_account_view(
+                wallet_ffi_handle,
+                &raw const absent_id,
+                &raw const ffi_native_program,
+                &raw mut out_absent,
+            ),
+            error::FfiOperationError::AccountNotFound
+        );
+    }
+
+    unsafe {
+        wallet_ffi_free_account_data(&raw mut out_balance_only);
+        wallet_ffi_free_account_data(&raw mut out_program_full);
+        wallet_ffi_free_account_data(&raw mut out_program_view);
+        wallet_ffi_free_account_data(&raw mut out_named_actor_state);
+        wallet_ffi_free_account_data(&raw mut out_account);
         wallet_ffi_destroy(wallet_ffi_handle);
     }
 
@@ -586,8 +678,11 @@ fn test_wallet_ffi_get_account_private() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let account_id: AccountId = ctx.ctx().existing_private_accounts()[0];
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
@@ -604,7 +699,7 @@ fn test_wallet_ffi_get_account_private() -> Result<()> {
             &raw mut out_account,
         )
         .unwrap();
-        out_account.try_into().unwrap()
+        (&out_account).try_into().unwrap()
     };
 
     // A private account: private balances stay small (fee-exempt under the
@@ -636,8 +731,11 @@ fn test_wallet_ffi_get_public_account_keys() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let account_id: AccountId = ctx.ctx().existing_public_accounts()[0];
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
@@ -689,8 +787,11 @@ fn test_wallet_ffi_get_private_account_keys() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let account_id: AccountId = ctx.ctx().existing_private_accounts()[0];
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
@@ -780,14 +881,17 @@ fn wallet_ffi_base58_to_account_id() -> Result<()> {
 }
 
 #[test]
-fn wallet_ffi_public_credit_creates_only_the_native_shard() -> Result<()> {
+fn wallet_ffi_public_credit_creates_only_the_native_actor_state() -> Result<()> {
     let sequencer_ffi_helpers::JoiningSetup {
         ctx,
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,
@@ -800,17 +904,17 @@ fn wallet_ffi_public_credit_creates_only_the_native_shard() -> Result<()> {
         wallet_ffi_create_account_public(wallet_ffi_handle, &raw mut out_account_id).unwrap();
     }
 
-    let account: Account = unsafe {
-        let mut out_account = FfiAccount::default();
-        wallet_ffi_get_account_public(
-            wallet_ffi_handle,
-            &raw const out_account_id,
-            &raw mut out_account,
-        )
-        .unwrap();
-        out_account.try_into().unwrap()
-    };
-    assert!(account.data.shards.is_empty());
+    let mut out_absent = FfiAccount::default();
+    unsafe {
+        assert_eq!(
+            wallet_ffi_get_account_public(
+                wallet_ffi_handle,
+                &raw const out_account_id,
+                &raw mut out_absent,
+            ),
+            error::FfiOperationError::AccountNotFound
+        );
+    }
 
     let from: FfiBytes32 = ctx.ctx().existing_public_accounts()[0].into();
     let amount: [u8; 16] = 100_u128.to_le_bytes();
@@ -836,7 +940,7 @@ fn wallet_ffi_public_credit_creates_only_the_native_shard() -> Result<()> {
             &raw mut out_account,
         )
         .unwrap();
-        out_account.try_into().unwrap()
+        (&out_account).try_into().unwrap()
     };
     assert_eq!(account.data, Account::funded(100).data);
 
@@ -860,8 +964,11 @@ fn test_wallet_ffi_transfer_public() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,
@@ -941,8 +1048,11 @@ fn test_wallet_ffi_transfer_shielded() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,
@@ -952,11 +1062,8 @@ fn test_wallet_ffi_transfer_shielded() -> Result<()> {
     let (to, to_keys) = unsafe {
         let mut out_keys = FfiPrivateAccountKeys::default();
         wallet_ffi_create_private_accounts_key(wallet_ffi_handle, &raw mut out_keys).unwrap();
-        let account_id = lee::AccountId::for_regular_private_account(
-            &out_keys.npk(),
-            &out_keys.vpk().unwrap(),
-            Identifier::ZERO,
-        );
+        let account_id =
+            lee::AccountId::for_regular_private_account(&out_keys.npk(), &out_keys.vpk().unwrap());
         let to: FfiBytes32 = account_id.into();
         (to, out_keys)
     };
@@ -966,12 +1073,10 @@ fn test_wallet_ffi_transfer_shielded() -> Result<()> {
 
     let mut transfer_result = FfiTransferResult::default();
     unsafe {
-        let to_identifier = FfiIdentifier::default();
         wallet_ffi_transfer_shielded(
             wallet_ffi_handle,
             &raw const from,
             &raw const to_keys,
-            &raw const to_identifier,
             &raw const amount,
             std::ptr::null(),
             &raw mut transfer_result,
@@ -987,6 +1092,8 @@ fn test_wallet_ffi_transfer_shielded() -> Result<()> {
         wallet_ffi_get_current_block_height(wallet_ffi_handle, &raw mut current_height).unwrap();
         wallet_ffi_sync_to_block(wallet_ffi_handle, current_height).unwrap();
     };
+    // Sent by keys, the credit is pending until the owner receives it.
+    receive_pending(wallet_ffi_handle);
 
     let from_balance = ffi_balance(wallet_ffi_handle, &from, true);
 
@@ -1026,8 +1133,11 @@ fn test_wallet_ffi_transfer_deshielded() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,
@@ -1104,8 +1214,11 @@ fn test_wallet_ffi_transfer_private() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,
@@ -1116,11 +1229,8 @@ fn test_wallet_ffi_transfer_private() -> Result<()> {
     let (to, to_keys) = unsafe {
         let mut out_keys = FfiPrivateAccountKeys::default();
         wallet_ffi_create_private_accounts_key(wallet_ffi_handle, &raw mut out_keys).unwrap();
-        let account_id = lee::AccountId::for_regular_private_account(
-            &out_keys.npk(),
-            &out_keys.vpk().unwrap(),
-            Identifier::ZERO,
-        );
+        let account_id =
+            lee::AccountId::for_regular_private_account(&out_keys.npk(), &out_keys.vpk().unwrap());
         let to: FfiBytes32 = account_id.into();
         (to, out_keys)
     };
@@ -1129,12 +1239,10 @@ fn test_wallet_ffi_transfer_private() -> Result<()> {
 
     let mut transfer_result = FfiTransferResult::default();
     unsafe {
-        let to_identifier = FfiIdentifier::default();
         wallet_ffi_transfer_private(
             wallet_ffi_handle,
             &raw const from,
             &raw const to_keys,
-            &raw const to_identifier,
             &raw const amount,
             &raw mut transfer_result,
         )
@@ -1149,6 +1257,8 @@ fn test_wallet_ffi_transfer_private() -> Result<()> {
         wallet_ffi_get_current_block_height(wallet_ffi_handle, &raw mut current_height).unwrap();
         wallet_ffi_sync_to_block(wallet_ffi_handle, current_height).unwrap();
     };
+    // Sent by keys, the credit is pending until the owner receives it.
+    receive_pending(wallet_ffi_handle);
 
     let from_balance = unsafe {
         let mut out_balance: [u8; 16] = [0; 16];
@@ -1195,8 +1305,11 @@ fn restore_keys_from_seed_ffi() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,
@@ -1209,11 +1322,8 @@ fn restore_keys_from_seed_ffi() -> Result<()> {
     let (private_account_id_1, private_account_1_keys) = unsafe {
         let mut out_keys = FfiPrivateAccountKeys::default();
         wallet_ffi_create_private_accounts_key(wallet_ffi_handle, &raw mut out_keys).unwrap();
-        let account_id = lee::AccountId::for_regular_private_account(
-            &out_keys.npk(),
-            &out_keys.vpk().unwrap(),
-            Identifier::ZERO,
-        );
+        let account_id =
+            lee::AccountId::for_regular_private_account(&out_keys.npk(), &out_keys.vpk().unwrap());
         let to: FfiBytes32 = account_id.into();
         (to, out_keys)
     };
@@ -1221,11 +1331,8 @@ fn restore_keys_from_seed_ffi() -> Result<()> {
     let (private_account_id_2, private_account_2_keys) = unsafe {
         let mut out_keys = FfiPrivateAccountKeys::default();
         wallet_ffi_create_private_accounts_key(wallet_ffi_handle, &raw mut out_keys).unwrap();
-        let account_id = lee::AccountId::for_regular_private_account(
-            &out_keys.npk(),
-            &out_keys.vpk().unwrap(),
-            Identifier::ZERO,
-        );
+        let account_id =
+            lee::AccountId::for_regular_private_account(&out_keys.npk(), &out_keys.vpk().unwrap());
         let to: FfiBytes32 = account_id.into();
         (to, out_keys)
     };
@@ -1261,12 +1368,10 @@ fn restore_keys_from_seed_ffi() -> Result<()> {
 
     let mut transfer_result_1 = FfiTransferResult::default();
     unsafe {
-        let to_identifier = FfiIdentifier::default();
         wallet_ffi_transfer_private(
             wallet_ffi_handle,
             &raw const from_private,
             &raw const private_account_1_keys,
-            &raw const to_identifier,
             &raw const amount_1,
             &raw mut transfer_result_1,
         )
@@ -1287,12 +1392,10 @@ fn restore_keys_from_seed_ffi() -> Result<()> {
 
     let mut transfer_result_2 = FfiTransferResult::default();
     unsafe {
-        let to_identifier = FfiIdentifier::default();
         wallet_ffi_transfer_private(
             wallet_ffi_handle,
             &raw const from_private,
             &raw const private_account_2_keys,
-            &raw const to_identifier,
             &raw const amount_2,
             &raw mut transfer_result_2,
         )
@@ -1366,7 +1469,8 @@ fn restore_keys_from_seed_ffi() -> Result<()> {
 
     log::info!("Preparation complete, performing keys restoration");
 
-    let password = CString::new(ctx.ctx().wallet_password())?;
+    // Sent by keys, both private credits are pending until the owner receives them.
+    receive_pending(wallet_ffi_handle);
 
     log::info!("Checking balance correctness before restoration");
 
@@ -1420,8 +1524,7 @@ fn restore_keys_from_seed_ffi() -> Result<()> {
     assert_eq!(public_account_id_2_balance, 103);
 
     unsafe {
-        wallet_ffi_restore_data(wallet_ffi_handle, mnemonic.as_ptr(), password.as_ptr(), 5)
-            .unwrap();
+        wallet_ffi_restore_data(wallet_ffi_handle, mnemonic.as_ptr(), 5).unwrap();
     }
 
     // Sync private account local storage with onchain encrypted state
@@ -1488,6 +1591,62 @@ fn restore_keys_from_seed_ffi() -> Result<()> {
     unsafe {
         sequencer_ffi_helpers::sequencer_ffi_stop_sequencer(sequencer_ffi_res.value);
     }
+
+    Ok(())
+}
+
+#[test]
+fn a_pending_private_credit_survives_seed_restoration_ffi() -> Result<()> {
+    let sequencer_ffi_helpers::JoiningSetup {
+        ctx,
+        node: _,
+        ownership_id: _,
+        sequencer_ffi: sequencer_ffi_res,
+        sequencer_home,
+    } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
+    let home = tempfile::tempdir()?;
+    let FfiCreateWalletOutput {
+        wallet: wallet_ffi_handle,
+        mnemonic,
+    } = new_wallet_ffi_with_test_context_config(&ctx, home.path(), sequencer_ffi_res.value)?;
+    let mnemonic = unsafe { CString::from_raw(mnemonic) };
+
+    let (private_account_id, private_account_keys) = unsafe {
+        let mut out_keys = FfiPrivateAccountKeys::default();
+        wallet_ffi_create_private_accounts_key(wallet_ffi_handle, &raw mut out_keys).unwrap();
+        let account_id =
+            lee::AccountId::for_regular_private_account(&out_keys.npk(), &out_keys.vpk().unwrap());
+        (FfiBytes32::from(account_id), out_keys)
+    };
+    let from: FfiBytes32 = ctx.ctx().existing_private_accounts()[0].into();
+    let amount: [u8; 16] = 100_u128.to_le_bytes();
+
+    let mut transfer_result = FfiTransferResult::default();
+    unsafe {
+        wallet_ffi_transfer_private(
+            wallet_ffi_handle,
+            &raw const from,
+            &raw const private_account_keys,
+            &raw const amount,
+            &raw mut transfer_result,
+        )
+        .unwrap();
+    }
+    wait_for_inclusion(wallet_ffi_handle, &transfer_result);
+    unsafe {
+        wallet_ffi_free_transfer_result(&raw mut transfer_result);
+        wallet_ffi_restore_data(wallet_ffi_handle, mnemonic.as_ptr(), 5).unwrap();
+    }
+
+    receive_pending(wallet_ffi_handle);
+
+    assert_eq!(
+        ffi_balance(wallet_ffi_handle, &private_account_id, false),
+        100
+    );
 
     Ok(())
 }
@@ -1559,6 +1718,9 @@ const fn mention(identity: FfiAccountIdentity, program: AccountId) -> FfiAccount
     FfiAccountMention {
         identity,
         program_account_id: FfiBytes32::from_account_id(&program),
+        authorizes: true,
+        address_openings: std::ptr::null(),
+        address_openings_size: 0,
     }
 }
 
@@ -1569,15 +1731,19 @@ fn test_wallet_ffi_transfer_generic_public() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,
         mnemonic: _,
     } = new_wallet_ffi_with_test_context_config(&ctx, home.path(), sequencer_ffi_res.value)?;
     let from: FfiBytes32 = ctx.ctx().existing_public_accounts()[0].into();
-    let to: FfiBytes32 = ctx.ctx().existing_public_accounts()[1].into();
+    let to_id = ctx.ctx().existing_public_accounts()[1];
+    let to: FfiBytes32 = to_id.into();
     let amount = 100_u128;
 
     let from_before = ffi_balance(wallet_ffi_handle, &from, true);
@@ -1609,22 +1775,21 @@ fn test_wallet_ffi_transfer_generic_public() -> Result<()> {
     let account_mentions_size = ffi_accs.len();
     let account_mentions = Box::into_raw(ffi_accs.into_boxed_slice()) as *const FfiAccountMention;
 
-    let instruction_data =
-        Program::serialize_instruction(lee_core::native_token::Instruction::Transfer { amount })
+    // The sender's native actor, mention 0, is the root.
+    let message =
+        Program::serialize_message(lee_core::native_token::Message::Transfer { to: to_id, amount })
             .unwrap();
-    let instruction_data_size = instruction_data.len();
-    let instruction_data_ptr = Box::into_raw(instruction_data.into_boxed_slice()) as *const u8;
-
-    let program_account_id = lee_core::native_token::NATIVE_TOKEN_PROGRAM_ID;
+    let message_size = message.len();
+    let message_ptr = Box::into_raw(message.into_boxed_slice()) as *const u8;
 
     unsafe {
         wallet_ffi_send_generic_public_transaction(
             wallet_ffi_handle,
             account_mentions,
             account_mentions_size,
-            instruction_data_ptr,
-            instruction_data_size,
-            program_account_id.into(),
+            0,
+            message_ptr,
+            message_size,
             std::ptr::null(),
             &raw mut transaction_result,
         )
@@ -1676,9 +1841,8 @@ fn test_wallet_ffi_transfer_generic_public() -> Result<()> {
         wallet_ffi_free_account_identity(&raw mut (*mentions).identity);
         wallet_ffi_free_account_identity(&raw mut (*mentions.add(1)).identity);
 
-        let instruction_data =
-            std::slice::from_raw_parts_mut(instruction_data_ptr.cast_mut(), instruction_data_size);
-        drop(Box::from_raw(std::ptr::from_mut(instruction_data)));
+        let message = std::slice::from_raw_parts_mut(message_ptr.cast_mut(), message_size);
+        drop(Box::from_raw(std::ptr::from_mut(message)));
 
         wallet_ffi_free_transaction_result(&raw mut transaction_result);
         wallet_ffi_destroy(wallet_ffi_handle);
@@ -1699,15 +1863,19 @@ fn test_wallet_ffi_transfer_generic_private() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,
         mnemonic: _,
     } = new_wallet_ffi_with_test_context_config(&ctx, home.path(), sequencer_ffi_res.value)?;
     let from = ctx.ctx().existing_private_accounts()[0].into();
-    let to: FfiBytes32 = ctx.ctx().existing_private_accounts()[1].into();
+    let to_id = ctx.ctx().existing_private_accounts()[1];
+    let to: FfiBytes32 = to_id.into();
     let native_token_program = NATIVE_TOKEN_PROGRAM_ID;
     let native_transfer_amount = 100_u128;
 
@@ -1733,19 +1901,19 @@ fn test_wallet_ffi_transfer_generic_private() -> Result<()> {
     let account_mentions_size = ffi_accs.len();
     let account_mentions = Box::into_raw(ffi_accs.into_boxed_slice()) as *const FfiAccountMention;
 
-    let instruction_data =
-        Program::serialize_instruction(lee_core::native_token::Instruction::Transfer {
-            amount: native_transfer_amount,
-        })
-        .unwrap();
-    let instruction_data_size = instruction_data.len();
-    let instruction_data_ptr = Box::into_raw(instruction_data.into_boxed_slice()) as *const u8;
+    // The sender, mention 0, is the root; its transfer credits the recipient, mention 1.
+    let message = Program::serialize_message(lee_core::native_token::Message::Transfer {
+        to: to_id,
+        amount: native_transfer_amount,
+    })
+    .unwrap();
+    let message_size = message.len();
+    let message_ptr = Box::into_raw(message.into_boxed_slice()) as *const u8;
 
     let ffi_programs: Vec<FfiDependency> = vec![];
     let programs_size = ffi_programs.len();
     let programs_ptr = Box::into_raw(ffi_programs.into_boxed_slice()) as *const FfiDependency;
-    let program_with_dependencies = FfiProgramWithDependencies {
-        self_account_id: FfiBytes32::from_account_id(&native_token_program),
+    let programs = FfiProgramCatalog {
         programs: programs_ptr,
         programs_size,
     };
@@ -1755,9 +1923,10 @@ fn test_wallet_ffi_transfer_generic_private() -> Result<()> {
             wallet_ffi_handle,
             account_mentions,
             account_mentions_size,
-            instruction_data_ptr,
-            instruction_data_size,
-            &raw const program_with_dependencies,
+            0,
+            message_ptr,
+            message_size,
+            &raw const programs,
             &raw mut transaction_result,
         )
         .unwrap();
@@ -1777,7 +1946,7 @@ fn test_wallet_ffi_transfer_generic_private() -> Result<()> {
         )
         .unwrap();
     }
-    assert!(is_included, "the token definition transaction must land");
+    assert!(is_included, "the transfer must land");
 
     // Sync private account local storage with onchain encrypted state
     unsafe {
@@ -1792,7 +1961,10 @@ fn test_wallet_ffi_transfer_generic_private() -> Result<()> {
         wallet_ffi_get_account_private(wallet_ffi_handle, &raw const from, &raw mut out_from)
             .unwrap();
         wallet_ffi_get_account_private(wallet_ffi_handle, &raw const to, &raw mut out_to).unwrap();
-        (out_from.try_into().unwrap(), out_to.try_into().unwrap())
+        (
+            (&out_from).try_into().unwrap(),
+            (&out_to).try_into().unwrap(),
+        )
     };
 
     let new_from_balance = from_account.data.native_balance().expect("Must fit");
@@ -1809,9 +1981,8 @@ fn test_wallet_ffi_transfer_generic_private() -> Result<()> {
         wallet_ffi_free_account_identity(&raw mut (*mentions).identity);
         wallet_ffi_free_account_identity(&raw mut (*mentions.add(1)).identity);
 
-        let instruction_data =
-            std::slice::from_raw_parts_mut(instruction_data_ptr.cast_mut(), instruction_data_size);
-        drop(Box::from_raw(std::ptr::from_mut(instruction_data)));
+        let message = std::slice::from_raw_parts_mut(message_ptr.cast_mut(), message_size);
+        drop(Box::from_raw(std::ptr::from_mut(message)));
 
         wallet_ffi_free_transaction_result(&raw mut transaction_result);
         wallet_ffi_destroy(wallet_ffi_handle);
@@ -1832,8 +2003,11 @@ fn test_wallet_ffi_single_label() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,
@@ -1892,8 +2066,11 @@ fn test_wallet_ffi_more_labels() -> Result<()> {
         node: _,
         ownership_id: _,
         sequencer_ffi: sequencer_ffi_res,
-        sequencer_home: _,
+        sequencer_home,
     } = sequencer_ffi_helpers::joining_setup(false)?;
+
+    log::info!("Joining sequencer home: {sequencer_home:?}");
+
     let home = tempfile::tempdir()?;
     let FfiCreateWalletOutput {
         wallet: wallet_ffi_handle,

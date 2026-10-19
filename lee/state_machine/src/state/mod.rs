@@ -1,17 +1,20 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use lee_core::{
-    BlockId, Commitment, CommitmentSetDigest, DUMMY_COMMITMENT, MembershipProof, Nullifier,
-    Timestamp,
-    account::{Account, AccountId, ShardData},
+    BlockId, Commitment, CommitmentPosition, CommitmentSetDigest, DUMMY_COMMITMENT, EncryptedNote,
+    MembershipProof, Nullifier, RecoveryBinding, SealedMessage, Timestamp,
+    account::{Account, AccountId, ActorState},
     program::{
-        PROGRAM_LOADER_ACCOUNT_ID, ProgramHeader, ProgramId, ProgramSegment, TransactionEvent,
-        get_program_via, immutable_mirror_commitment,
+        MessageBody, PROGRAM_LOADER_ACCOUNT_ID, ProgramHeader, ProgramId, ProgramSegment,
+        Publication, TransactionEvent, get_program_via, immutable_mirror_commitment,
     },
 };
+use rpds::{HashTrieMapSync, HashTrieSetSync, RedBlackTreeMapSync, RedBlackTreeSetSync};
 
 use crate::{
+    encoding::persistent::serialize_ordered_map,
+    ensure,
     error::LeeError,
     merkle_tree::MerkleTree,
     privacy_preserving_transaction::PrivacyPreservingTransaction,
@@ -24,8 +27,16 @@ use crate::{
 #[cfg_attr(test, derive(Debug))]
 pub struct CommitmentSet {
     merkle_tree: MerkleTree,
-    commitments: HashMap<Commitment, usize>,
-    root_history: HashSet<CommitmentSetDigest>,
+    #[borsh(
+        serialize_with = "crate::encoding::persistent::serialize_map",
+        deserialize_with = "crate::encoding::persistent::deserialize_map"
+    )]
+    commitments: HashTrieMapSync<Commitment, usize>,
+    #[borsh(
+        serialize_with = "crate::encoding::persistent::serialize_set",
+        deserialize_with = "crate::encoding::persistent::deserialize_set"
+    )]
+    root_history: HashTrieSetSync<CommitmentSetDigest>,
 }
 
 impl CommitmentSet {
@@ -39,16 +50,46 @@ impl CommitmentSet {
 
         self.merkle_tree
             .get_authentication_path_for(index)
-            .map(|path| (index, path))
+            .map(|path| {
+                (
+                    CommitmentPosition::try_from(index).expect("a leaf position fits in u64"),
+                    path,
+                )
+            })
     }
 
     /// Inserts a list of commitments to the `CommitmentSet`.
     pub(crate) fn extend(&mut self, commitments: &[Commitment]) {
+        self.append(commitments, &[]);
+    }
+
+    // One transaction's leaves under one recorded root. A message leaf is found by its position
+    // alone: one body may be published at several.
+    pub(crate) fn append(
+        &mut self,
+        commitments: &[Commitment],
+        messages: &[Commitment],
+    ) -> Vec<CommitmentPosition> {
         for commitment in commitments.iter().copied() {
             let index = self.merkle_tree.insert(commitment.to_byte_array());
-            self.commitments.insert(commitment, index);
+            self.commitments.insert_mut(commitment, index);
         }
-        self.root_history.insert(self.digest());
+        let positions = messages
+            .iter()
+            .map(|message| {
+                CommitmentPosition::try_from(self.merkle_tree.insert(message.to_byte_array()))
+                    .expect("a leaf position fits in u64")
+            })
+            .collect();
+        self.root_history.insert_mut(self.digest());
+        positions
+    }
+
+    fn get_proof_at(&self, position: CommitmentPosition) -> Option<MembershipProof> {
+        let index = usize::try_from(position).ok()?;
+        self.merkle_tree
+            .get_authentication_path_for(index)
+            .map(|path| (position, path))
     }
 
     fn contains(&self, commitment: &Commitment) -> bool {
@@ -61,23 +102,25 @@ impl CommitmentSet {
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
             merkle_tree: MerkleTree::with_capacity(capacity),
-            commitments: HashMap::new(),
-            root_history: HashSet::new(),
+            commitments: HashTrieMapSync::new_sync(),
+            root_history: HashTrieSetSync::new_sync(),
         }
     }
 }
 
 #[cfg_attr(test, derive(Debug))]
 #[derive(Clone, PartialEq, Eq)]
-struct NullifierSet(BTreeSet<Nullifier>);
+struct NullifierSet(RedBlackTreeSetSync<Nullifier>);
 
 impl NullifierSet {
-    const fn new() -> Self {
-        Self(BTreeSet::new())
+    fn new() -> Self {
+        Self(RedBlackTreeSetSync::new_sync())
     }
 
     fn extend(&mut self, new_nullifiers: &[Nullifier]) {
-        self.0.extend(new_nullifiers);
+        for nullifier in new_nullifiers {
+            self.0.insert_mut(*nullifier);
+        }
     }
 
     fn contains(&self, nullifier: &Nullifier) -> bool {
@@ -95,14 +138,15 @@ impl BorshDeserialize for NullifierSet {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let vec = Vec::<Nullifier>::deserialize_reader(reader)?;
 
-        let mut set = BTreeSet::new();
+        let mut set = RedBlackTreeSetSync::new_sync();
         for n in vec {
-            if !set.insert(n) {
+            if set.contains(&n) {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "duplicate nullifier in NullifierSet",
                 ));
             }
+            set.insert_mut(n);
         }
 
         Ok(Self(set))
@@ -112,8 +156,29 @@ impl BorshDeserialize for NullifierSet {
 #[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(test, derive(Debug))]
 pub struct V03State {
-    public_state: HashMap<AccountId, Account>,
+    #[borsh(
+        serialize_with = "crate::encoding::persistent::serialize_map",
+        deserialize_with = "crate::encoding::persistent::deserialize_map"
+    )]
+    public_state: HashTrieMapSync<AccountId, Account>,
     private_state: (CommitmentSet, NullifierSet),
+    #[borsh(
+        serialize_with = "crate::encoding::persistent::serialize_ordered_map",
+        deserialize_with = "crate::encoding::persistent::deserialize_ordered_map"
+    )]
+    publications: RedBlackTreeMapSync<CommitmentPosition, StoredPublication>,
+    #[borsh(
+        serialize_with = "crate::encoding::persistent::serialize_ordered_map",
+        deserialize_with = "crate::encoding::persistent::deserialize_ordered_map"
+    )]
+    recovery_bindings: RedBlackTreeMapSync<AccountId, EncryptedNote>,
+}
+
+#[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(test, derive(Debug))]
+enum StoredPublication {
+    Clear(MessageBody),
+    Sealed(SealedMessage),
 }
 
 impl Default for V03State {
@@ -124,8 +189,10 @@ impl Default for V03State {
         let private_state = (commitment_set, nullifier_set);
 
         Self {
-            public_state: HashMap::default(),
+            public_state: HashTrieMapSync::new_sync(),
             private_state,
+            publications: RedBlackTreeMapSync::new_sync(),
+            recovery_bindings: RedBlackTreeMapSync::new_sync(),
         }
     }
 }
@@ -148,10 +215,10 @@ impl V03State {
         mut self,
         balances: impl IntoIterator<Item = (AccountId, u128)>,
     ) -> Self {
-        let public_accounts = balances
-            .into_iter()
-            .map(|(account_id, balance)| (account_id, Account::funded(balance)));
-        self.public_state.extend(public_accounts);
+        for (account_id, balance) in balances {
+            self.public_state
+                .insert_mut(account_id, Account::funded(balance));
+        }
         self
     }
 
@@ -161,11 +228,14 @@ impl V03State {
         mut self,
         public_accounts: impl IntoIterator<Item = (AccountId, Account)>,
     ) -> Self {
-        self.public_state.extend(public_accounts);
+        for (account_id, account) in public_accounts {
+            self.public_state.insert_mut(account_id, account);
+        }
         self
     }
 
     /// Initializes state with given private accounts.
+    #[cfg(any(test, feature = "test-utils"))]
     #[must_use]
     pub fn with_private_accounts(
         mut self,
@@ -175,6 +245,20 @@ impl V03State {
             private_accounts.into_iter().unzip();
         self.private_state.0.extend(&commitments);
         self.private_state.1.extend(&nullifiers);
+        self
+    }
+
+    /// Initializes state with given recovery bindings, under which durable async messages to their
+    /// addresses publish.
+    #[must_use]
+    pub fn with_recovery_bindings(
+        mut self,
+        bindings: impl IntoIterator<Item = RecoveryBinding>,
+    ) -> Self {
+        for binding in bindings {
+            self.recovery_bindings
+                .insert_mut(binding.address, binding.note);
+        }
         self
     }
 
@@ -234,18 +318,18 @@ impl V03State {
             .collect();
 
         for (i, chunk) in chunks.iter().enumerate() {
-            let segment = Account::default().with_shard(
+            let segment = Account::default().with_actor_state(
                 PROGRAM_LOADER_ACCOUNT_ID,
-                ShardData::try_from(
+                ActorState::from(
                     ProgramSegment {
                         bytecode: chunk.to_vec(),
                         next_segment: segment_account_ids.get(i.saturating_add(1)).copied(),
                     }
                     .to_bytes(),
-                )
-                .expect("segment fits under DATA_MAX_LENGTH"),
+                ),
             );
-            self.public_state.insert(segment_account_ids[i], segment);
+            self.public_state
+                .insert_mut(segment_account_ids[i], segment);
         }
 
         let program_header = ProgramHeader {
@@ -253,12 +337,11 @@ impl V03State {
             program_first_segment: segment_account_ids[0],
             immutable,
         };
-        let header = Account::default().with_shard(
+        let header = Account::default().with_actor_state(
             PROGRAM_LOADER_ACCOUNT_ID,
-            ShardData::try_from(program_header.to_bytes())
-                .expect("program header fits under DATA_MAX_LENGTH"),
+            ActorState::from(program_header.to_bytes()),
         );
-        self.public_state.insert(header_account_id, header);
+        self.public_state.insert_mut(header_account_id, header);
 
         if immutable {
             let commitment = immutable_mirror_commitment(header_account_id, &program_header);
@@ -266,30 +349,70 @@ impl V03State {
         }
     }
 
-    #[must_use]
-    pub fn apply_state_diff(&mut self, diff: ValidatedStateDiff) -> Vec<TransactionEvent> {
+    pub fn apply_state_diff(
+        &mut self,
+        diff: ValidatedStateDiff,
+    ) -> Result<Vec<TransactionEvent>, LeeError> {
         let StateDiff {
             signer_account_ids,
             public_diff,
             new_commitments,
             new_nullifiers,
             events,
+            published,
+            recovery_bindings,
         } = diff.into_state_diff();
+        // A diff validated against an earlier or another branch's state must still spend each
+        // nullifier once, under a root this state knows.
+        self.check_nullifiers_are_valid(&new_nullifiers)?;
+        let spent: Vec<Nullifier> = new_nullifiers
+            .iter()
+            .map(|(nullifier, _)| *nullifier)
+            .collect();
+        ensure!(
+            spent.iter().collect::<BTreeSet<_>>().len() == spent.len(),
+            LeeError::InvalidInput("Duplicate nullifiers found in state diff".into())
+        );
+        self.check_recovery_bindings_are_new(&recovery_bindings)?;
+        for publication in &published {
+            if let Publication::Clear { body, recovery } = publication {
+                let address = body.to.account_id;
+                ensure!(
+                    self.bound_note(&recovery_bindings, address) == Some(recovery),
+                    LeeError::InvalidInput(format!(
+                        "The recovery binding for {address} differs from the one its publication \
+                         carries"
+                    ))
+                );
+            }
+        }
         #[expect(
             clippy::iter_over_hash_type,
             reason = "Iteration order doesn't matter here"
         )]
         for (account_id, account) in public_diff {
-            *self.get_account_by_id_mut(account_id) = account;
+            self.public_state.insert_mut(account_id, account);
         }
         for account_id in signer_account_ids {
             self.get_account_by_id_mut(account_id)
                 .nonce
                 .public_account_nonce_increment();
         }
-        self.private_state.0.extend(&new_commitments);
-        self.private_state.1.extend(&new_nullifiers);
-        events
+        let messages: Vec<Commitment> = published.iter().map(Publication::commitment).collect();
+        let positions = self.private_state.0.append(&new_commitments, &messages);
+        self.private_state.1.extend(&spent);
+        let stored = published.into_iter().map(|publication| match publication {
+            Publication::Clear { body, .. } => StoredPublication::Clear(body),
+            Publication::Sealed(sealed) => StoredPublication::Sealed(sealed),
+        });
+        for (position, publication) in positions.into_iter().zip(stored) {
+            self.publications.insert_mut(position, publication);
+        }
+        for binding in recovery_bindings {
+            self.recovery_bindings
+                .insert_mut(binding.address, binding.note);
+        }
+        Ok(events)
     }
 
     pub fn transition_from_public_transaction(
@@ -299,7 +422,7 @@ impl V03State {
         timestamp: Timestamp,
     ) -> Result<Vec<TransactionEvent>, LeeError> {
         let diff = ValidatedStateDiff::from_public_transaction(tx, self, block_id, timestamp)?;
-        Ok(self.apply_state_diff(diff))
+        self.apply_state_diff(diff)
     }
 
     pub fn transition_from_privacy_preserving_transaction(
@@ -310,12 +433,17 @@ impl V03State {
     ) -> Result<(), LeeError> {
         let diff =
             ValidatedStateDiff::from_privacy_preserving_transaction(tx, self, block_id, timestamp)?;
-        drop(self.apply_state_diff(diff));
+        self.apply_state_diff(diff)?;
         Ok(())
     }
 
     fn get_account_by_id_mut(&mut self, account_id: AccountId) -> &mut Account {
-        self.public_state.entry(account_id).or_default()
+        if !self.public_state.contains_key(&account_id) {
+            self.public_state.insert_mut(account_id, Account::default());
+        }
+        self.public_state
+            .get_mut(&account_id)
+            .expect("the account was just inserted")
     }
 
     #[must_use]
@@ -332,11 +460,49 @@ impl V03State {
         self.public_state.get(&account_id)
     }
 
+    #[must_use]
+    pub fn recovery_binding(&self, address: AccountId) -> Option<&EncryptedNote> {
+        self.recovery_bindings.get(&address)
+    }
+
+    pub(crate) fn bound_note<'binding>(
+        &'binding self,
+        introduced: &'binding [RecoveryBinding],
+        address: AccountId,
+    ) -> Option<&'binding EncryptedNote> {
+        introduced
+            .iter()
+            .find(|binding| binding.address == address)
+            .map(|binding| &binding.note)
+            .or_else(|| self.recovery_binding(address))
+    }
+
+    pub fn publications_from(
+        &self,
+        from_position: CommitmentPosition,
+    ) -> impl Iterator<Item = (CommitmentPosition, Publication)> {
+        self.publications
+            .range(from_position..)
+            .map(|(position, stored)| {
+                let publication = match stored {
+                    StoredPublication::Clear(body) => Publication::Clear {
+                        body: body.clone(),
+                        recovery: self
+                            .recovery_binding(body.to.account_id)
+                            .expect("a clear publication's address was bound when it was applied")
+                            .clone(),
+                    },
+                    StoredPublication::Sealed(sealed) => Publication::Sealed(sealed.clone()),
+                };
+                (*position, publication)
+            })
+    }
+
     /// Reconstructs a genesis-seeded builtin's bytecode from its header and segment chain at
     /// `account_id` — a program deployed elsewhere via `program_loader` won't be found here.
     #[must_use]
     pub fn get_builtin_program(&self, account_id: AccountId) -> Option<(ProgramId, Vec<u8>)> {
-        crate::program::resolve_program(account_id, |id| self.loader_shard(id))
+        crate::program::resolve_program(account_id, |id| self.loader_actor_state(id))
     }
 
     /// The real `image_id` of whatever program is deployed at `account_id`, or `None` if there
@@ -346,12 +512,12 @@ impl V03State {
     /// [`ProgramImageClaim`]: lee_core::ProgramImageClaim
     #[must_use]
     pub fn get_program_image_id(&self, account_id: AccountId) -> Option<ProgramId> {
-        get_program_via(account_id, |id| self.loader_shard(id)).map(|(image_id, _)| image_id)
+        get_program_via(account_id, |id| self.loader_actor_state(id)).map(|(image_id, _)| image_id)
     }
 
-    pub(crate) fn loader_shard(&self, account_id: AccountId) -> Option<&ShardData> {
+    pub(crate) fn loader_actor_state(&self, account_id: AccountId) -> Option<&ActorState> {
         self.get_account_by_id_ref(account_id)
-            .map(|account| account.data.shard(PROGRAM_LOADER_ACCOUNT_ID))
+            .map(|account| account.data.actor_state(PROGRAM_LOADER_ACCOUNT_ID))
     }
 
     #[must_use]
@@ -360,19 +526,29 @@ impl V03State {
     }
 
     #[must_use]
+    pub fn get_proof_for_position(&self, position: CommitmentPosition) -> Option<MembershipProof> {
+        self.private_state.0.get_proof_at(position)
+    }
+
+    #[must_use]
+    pub fn is_spent(&self, nullifier: &Nullifier) -> bool {
+        self.private_state.1.contains(nullifier)
+    }
+
+    #[must_use]
     pub fn commitment_set_digest(&self) -> CommitmentSetDigest {
         self.private_state.0.digest()
     }
 
     /// Order-independent fingerprint of the genesis-relevant state: the public account set
-    /// (which includes deployed programs' storage accounts) and the commitment-set digest.
+    /// (which includes deployed programs' storage accounts), the commitment-set digest, the
+    /// publications and the recovery bindings.
     ///
     /// The sequencer and the indexer build the directly-seeded part of genesis
     /// (base builtins plus any directly-seeded accounts) separately from their own
     /// configs, so a divergence there would otherwise go unnoticed. Both nodes log
     /// this at startup; equal values mean the two genesis states agree. Entries are
-    /// sorted by id before hashing, so the value does not depend on `HashMap`
-    /// iteration order.
+    /// sorted by id before hashing, so the value does not depend on iteration order.
     #[must_use]
     pub fn genesis_fingerprint(&self) -> [u8; 32] {
         use sha2::{Digest as _, Sha256};
@@ -382,6 +558,8 @@ impl V03State {
         let Self {
             public_state,
             private_state,
+            publications,
+            recovery_bindings,
         } = self;
 
         let mut accounts: Vec<(&AccountId, &Account)> = public_state.iter().collect();
@@ -398,6 +576,11 @@ impl V03State {
             hasher.update(&bytes);
         }
         hasher.update(private_state.0.digest());
+        let mut encoded = Vec::new();
+        serialize_ordered_map(publications, &mut encoded)
+            .and_then(|()| serialize_ordered_map(recovery_bindings, &mut encoded))
+            .expect("borsh serialization is infallible");
+        hasher.update(encoded);
 
         let mut out = [0_u8; 32];
         out.copy_from_slice(&hasher.finalize());
@@ -437,12 +620,43 @@ impl V03State {
     pub(crate) fn is_known_commitment_root(&self, digest: &CommitmentSetDigest) -> bool {
         self.private_state.0.root_history.contains(digest)
     }
+
+    pub(crate) fn check_recovery_bindings_are_new(
+        &self,
+        bindings: &[RecoveryBinding],
+    ) -> Result<(), LeeError> {
+        let mut addresses = BTreeSet::new();
+        for binding in bindings {
+            ensure!(
+                addresses.insert(binding.address)
+                    && !self.recovery_bindings.contains_key(&binding.address),
+                LeeError::InvalidInput(format!(
+                    "A recovery binding for {} already exists",
+                    binding.address
+                ))
+            );
+        }
+        Ok(())
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
 impl V03State {
     pub fn force_insert_account(&mut self, account_id: AccountId, account: Account) {
-        self.public_state.insert(account_id, account);
+        self.public_state.insert_mut(account_id, account);
+    }
+
+    #[must_use]
+    pub fn with_empty_public_accounts(
+        mut self,
+        account_ids: impl IntoIterator<Item = AccountId>,
+    ) -> Self {
+        for account_id in account_ids {
+            if !self.public_state.contains_key(&account_id) {
+                self.public_state.insert_mut(account_id, Account::default());
+            }
+        }
+        self
     }
 }
 

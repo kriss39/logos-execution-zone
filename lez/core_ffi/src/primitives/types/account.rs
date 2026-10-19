@@ -1,29 +1,38 @@
 use std::collections::BTreeMap;
 
-use lee::{Account, AccountData, AccountId, ShardData};
+use lee::{Account, AccountData, AccountId, ActorState};
 
-use crate::primitives::{
-    errors::PrimitiveOperationStatus,
-    types::{FfiAccountId, FfiBytes32, FfiU128, FfiVec, vectors::FfiVecU8},
+use crate::{
+    error::FfiOperationError,
+    primitives::{
+        errors::PrimitiveOperationStatus,
+        types::{FfiAccountId, FfiOption, FfiU128, FfiVec, vectors::FfiVecU8},
+    },
+    wallet::FfiActorState,
 };
 
 #[repr(C)]
 pub struct FfiAccountData {
-    /// Account shards keys.
+    /// Account actor state keys.
     pub account_data_keys: FfiVec<FfiAccountId>,
-    /// Account shards values (guaranteed to have same amount of entries as `account_data_keys`).
+    /// Account actor state values (guaranteed to have same amount of entries as
+    /// `account_data_keys`).
     pub account_data_values: FfiVec<FfiVecU8>,
 }
 
 impl From<AccountData> for FfiAccountData {
     fn from(value: AccountData) -> Self {
-        let AccountData { shards } = value;
+        let AccountData { actor_states } = value;
 
-        let acc_data_keys = shards.keys().copied().map(Into::into).collect::<Vec<_>>();
-        let acc_data_values = shards
+        let acc_data_keys = actor_states
+            .keys()
+            .copied()
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let acc_data_values = actor_states
             .values()
             .cloned()
-            .map(ShardData::into_inner)
+            .map(ActorState::into_inner)
             .map(Into::into)
             .collect::<Vec<_>>();
 
@@ -51,21 +60,10 @@ impl TryFrom<FfiAccountData> for AccountData {
             return Err(PrimitiveOperationStatus::CastError);
         }
 
-        let mut values_std = vec![];
-
-        for raw_shard in values_std_raw {
-            let shard: ShardData = raw_shard.try_into().map_err(|e| {
-                log::error!("Failed to cast `FfiAccount` into `Account`, err: {e}");
-                PrimitiveOperationStatus::CastError
-            })?;
-
-            values_std.push(shard);
-        }
-
         Ok(Self {
-            shards: keys_std
+            actor_states: keys_std
                 .into_iter()
-                .zip(values_std)
+                .zip(values_std_raw.into_iter().map(ActorState::from))
                 .collect::<BTreeMap<_, _>>(),
         })
     }
@@ -73,12 +71,15 @@ impl TryFrom<FfiAccountData> for AccountData {
 
 /// Account data structure - C-compatible version of lee Account.
 ///
-/// Note: `balance` and `nonce` are u128 values represented as little-endian
+/// Note: `nonce` is a u128 value represented as a little-endian
 /// byte arrays since C doesn't have native u128 support.
 #[repr(C)]
 pub struct FfiAccount {
-    /// Account data struct.
-    pub account_data: FfiAccountData,
+    /// Pointer to this account's actor states, ordered by program address. The native balance is
+    /// the actor state of the native token program.
+    pub actor_states: *const FfiActorState,
+    /// Number of actor states.
+    pub actor_states_len: usize,
     /// Nonce as little-endian [u8; 16].
     pub nonce: FfiU128,
 }
@@ -91,49 +92,92 @@ impl Default for FfiAccount {
 
 // Helper functions to convert between Rust and FFI types
 
-impl From<&lee::AccountId> for FfiBytes32 {
-    fn from(id: &lee::AccountId) -> Self {
-        Self::from_account_id(id)
-    }
-}
-
 impl From<lee::Account> for FfiAccount {
+    #[expect(
+        clippy::as_conversions,
+        reason = "We need to convert to byte arrays for FFI"
+    )]
     fn from(value: lee::Account) -> Self {
-        let lee::Account { data, nonce } = value;
+        let actor_states_vec: Vec<FfiActorState> = value
+            .data
+            .actor_states
+            .into_iter()
+            .map(|(program, record)| {
+                let record: Vec<u8> = record.into();
+                let data_len = record.len();
+                let data = if data_len > 0 {
+                    Box::into_raw(record.into_boxed_slice()) as *const u8
+                } else {
+                    std::ptr::null()
+                };
+                FfiActorState {
+                    program: program.into(),
+                    data,
+                    data_len,
+                }
+            })
+            .collect();
+
+        let actor_states_len = actor_states_vec.len();
+        let actor_states = if actor_states_len > 0 {
+            Box::into_raw(actor_states_vec.into_boxed_slice()) as *const FfiActorState
+        } else {
+            std::ptr::null()
+        };
 
         Self {
-            account_data: data.into(),
-            nonce: nonce.0.into(),
+            actor_states,
+            actor_states_len,
+            nonce: value.nonce.0.into(),
         }
     }
 }
 
-impl TryFrom<FfiAccount> for Account {
-    type Error = PrimitiveOperationStatus;
+impl TryFrom<&FfiAccount> for lee::Account {
+    type Error = FfiOperationError;
 
-    fn try_from(value: FfiAccount) -> Result<Self, Self::Error> {
-        let FfiAccount {
-            account_data,
-            nonce,
-        } = value;
+    fn try_from(value: &FfiAccount) -> Result<Self, Self::Error> {
+        let mut account = Self {
+            nonce: lee_core::account::Nonce(value.nonce.into()),
+            data: lee_core::account::AccountData {
+                actor_states: std::collections::BTreeMap::new(),
+            },
+        };
 
-        Ok(Self {
-            nonce: Into::<u128>::into(nonce).into(),
-            data: account_data.try_into()?,
-        })
+        if value.actor_states_len > 0 {
+            if value.actor_states.is_null() {
+                return Err(FfiOperationError::NullPointer);
+            }
+            let actor_states =
+                unsafe { std::slice::from_raw_parts(value.actor_states, value.actor_states_len) };
+            for actor_state in actor_states {
+                let data = if actor_state.data_len > 0 {
+                    let bytes = unsafe {
+                        std::slice::from_raw_parts(actor_state.data, actor_state.data_len)
+                    };
+                    ActorState::from(bytes.to_vec())
+                } else {
+                    ActorState::default()
+                };
+                account
+                    .data
+                    .set_actor_state(actor_state.program.into(), data);
+            }
+        }
+
+        Ok(account)
     }
 }
 
-/// Frees the resources associated with the given ffi account.
+/// Frees the resources associated with the given ffi account option.
 ///
-/// Takes ownership of the whole allocation: the
-/// outer `Box<FfiAccount>` (the `PointerResult.value` pointer) *and* its inner
-/// data buffer. Passing the struct by value previously freed only the inner
-/// buffer and leaked the outer box.
+/// Takes ownership of the whole allocation produced by a `query_*` call: the
+/// outer `Box<FfiOption<FfiAccount>>` (the `PointerResult.value` pointer), the
+/// inner `Box<FfiAccount>` (when present) and its data buffer.
 ///
 /// # Arguments
 ///
-/// - `val`: The `*mut FfiAccount` returned in `PointerResult.value`.
+/// - `val`: The `*mut FfiOption<FfiAccount>` returned in `PointerResult.value`.
 ///
 /// # Returns
 ///
@@ -142,22 +186,24 @@ impl TryFrom<FfiAccount> for Account {
 /// # Safety
 ///
 /// The caller must ensure that:
-/// - `val` is a pointer to an `FfiAccount` produced by this library and not yet freed.
+/// - `val` is a pointer to an `FfiOption<FfiAccount>` produced by this library and not yet freed.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn primitives_ffi_free_ffi_account(val: *mut FfiAccount) {
+pub unsafe extern "C" fn primitves_ffi_free_ffi_account_opt(val: *mut FfiOption<FfiAccount>) {
     if val.is_null() {
         log::error!("Trying to free a null pointer. Exiting");
         return;
     }
-    // Reclaim the outer box, then convert to drop the inner data buffer.
-    let boxed = unsafe { Box::from_raw(val) };
+    // Reclaim the outer box, then the inner account box (if any), converting it to drop its data.
+    let opt = unsafe { Box::from_raw(val) };
+    if opt.is_some {
+        let account = unsafe { Box::from_raw(opt.value) };
+        let orig_val_res: Result<Account, FfiOperationError> = (&*account)
+            .try_into()
+            .inspect_err(|_| log::error!("Failed to cast `FfiAccount` into `Account`"));
 
-    let orig_val_res: Result<Account, PrimitiveOperationStatus> = (*boxed)
-        .try_into()
-        .inspect_err(|_| log::error!("Failed to cast `FfiAccount` into `Account`"));
-
-    if let Ok(orig_val) = orig_val_res {
-        drop(orig_val);
+        if let Ok(orig_val) = orig_val_res {
+            drop(orig_val);
+        }
     }
 }
 
@@ -165,35 +211,26 @@ pub unsafe extern "C" fn primitives_ffi_free_ffi_account(val: *mut FfiAccount) {
 mod tests {
     use std::collections::BTreeMap;
 
-    use lee::{Account, AccountData, AccountId, ShardData};
+    use lee::{Account, AccountData, AccountId, ActorState};
     use lee_core::account::Nonce;
 
     use crate::primitives::types::account::FfiAccount;
 
     #[test]
     fn account_roundtrip() {
-        let mut shards = BTreeMap::new();
+        let mut actor_states = BTreeMap::new();
 
-        shards.insert(
-            AccountId::new([42; 32]),
-            ShardData::try_from(vec![1, 1, 1, 1]).expect("Must fit"),
-        );
-        shards.insert(
-            AccountId::new([43; 32]),
-            ShardData::try_from(vec![2, 2, 2, 2]).expect("Must fit"),
-        );
-        shards.insert(
-            AccountId::new([44; 32]),
-            ShardData::try_from(vec![3, 3, 3, 3]).expect("Must fit"),
-        );
+        actor_states.insert(AccountId::new([42; 32]), ActorState::from(vec![1, 1, 1, 1]));
+        actor_states.insert(AccountId::new([43; 32]), ActorState::from(vec![2, 2, 2, 2]));
+        actor_states.insert(AccountId::new([44; 32]), ActorState::from(vec![3, 3, 3, 3]));
 
         let account_std = Account {
             nonce: Nonce::from(5),
-            data: AccountData { shards },
+            data: AccountData { actor_states },
         };
 
         let ffi_account: FfiAccount = account_std.clone().into();
-        let account_std_trip: Account = ffi_account.try_into().expect("Must be castable");
+        let account_std_trip: Account = (&ffi_account).try_into().expect("Must be castable");
 
         assert_eq!(account_std_trip, account_std);
     }

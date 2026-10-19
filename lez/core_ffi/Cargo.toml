@@ -23,6 +23,7 @@ kameo.workspace = true
 env_logger.workspace = true
 bip39.workspace = true
 anyhow.workspace = true
+zeroize.workspace = true
 
 [lints]
 workspace = true

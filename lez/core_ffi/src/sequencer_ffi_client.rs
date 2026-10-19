@@ -1,29 +1,35 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use anyhow::Result;
+use lee::Actor;
+use lee_core::CommitmentPosition;
 use sequencer_executor_actor::protocol::{
-    GetAccount, GetAccountNonces, GetBlock, GetBlockRange, GetLastBlockId, GetProofsAndRoot,
-    GetTransaction, Transaction, TransactionOrigin,
+    GetAccount, GetAccountBalance, GetAccountNonces, GetAccountView, GetBlock, GetBlockRange,
+    GetLastBlockId, GetProofsAndRoot, GetPublications, GetRecoveryBinding, GetTransaction,
+    Transaction, TransactionOrigin,
 };
 use wallet::WalletSequencerClient;
 
 use crate::sequencer::SequencerServiceFFI;
 
 #[derive(Clone)]
-pub struct SequencerServiceFFIWrapper(pub Arc<&'static SequencerServiceFFI>);
+pub struct SequencerServiceFFIWrapper(pub &'static SequencerServiceFFI);
 
 impl SequencerServiceFFIWrapper {
-    pub fn wrap(sequencer: &'static SequencerServiceFFI) -> Self {
-        Self(Arc::new(sequencer))
+    #[must_use]
+    pub const fn wrap(sequencer: &'static SequencerServiceFFI) -> Self {
+        Self(sequencer)
     }
 }
 
 impl WalletSequencerClient for SequencerServiceFFIWrapper {
     fn from_config(_config: &wallet::config::WalletConfig) -> Result<Self> {
-        anyhow::bail!("Not intended way");
+        anyhow::bail!(
+            "Wallet config des not hold enough information to produce sequencer ffi, use corresponding sequencer_ffi_* function"
+        );
     }
 
-    async fn get_account(&self, account_id: lee::AccountId) -> Result<lee::Account> {
+    async fn get_account(&self, account_id: lee::AccountId) -> Result<Option<lee::Account>> {
         Ok(self
             .0
             .executor_ref()
@@ -37,12 +43,9 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
         Ok(self
             .0
             .executor_ref()
-            .ask(GetAccount { account_id })
+            .ask(GetAccountBalance { account_id })
             .send()
-            .await?
-            .account
-            .data
-            .native_balance()?)
+            .await?)
     }
 
     async fn get_accounts_nonces(
@@ -115,20 +118,16 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
         Ok(tx_hash)
     }
 
-    async fn get_account_view(
-        &self,
-        shard_selector: lee::ProgramShardSelector,
-    ) -> Result<lee::Account> {
+    async fn get_account_view(&self, actor_state_selector: Actor) -> Result<Option<lee::Account>> {
         Ok(self
             .0
             .executor_ref()
-            .ask(GetAccount {
-                account_id: shard_selector.account_id,
+            .ask(GetAccountView {
+                actor_state_selector,
             })
             .send()
             .await?
-            .account
-            .project([shard_selector.program_account_id]))
+            .account)
     }
 
     async fn get_program_ids(&self) -> Result<std::collections::BTreeMap<String, lee::ProgramId>> {
@@ -144,14 +143,47 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
     async fn get_proofs_and_root(
         &self,
         commitments: Vec<lee_core::Commitment>,
+        message_position: Option<CommitmentPosition>,
     ) -> Result<(
         Vec<Option<lee_core::MembershipProof>>,
+        Option<lee_core::MembershipProof>,
         lee_core::CommitmentSetDigest,
     )> {
         Ok(self
             .0
             .executor_ref()
-            .ask(GetProofsAndRoot { commitments })
+            .ask(GetProofsAndRoot {
+                commitments,
+                message_position,
+            })
+            .send()
+            .await?)
+    }
+
+    async fn get_publications(
+        &self,
+        from_position: CommitmentPosition,
+        limit: common::PageLimit,
+    ) -> Result<Vec<(CommitmentPosition, lee::Publication)>> {
+        Ok(self
+            .0
+            .executor_ref()
+            .ask(GetPublications {
+                from_position,
+                limit,
+            })
+            .send()
+            .await?)
+    }
+
+    async fn get_recovery_binding(
+        &self,
+        address: lee::AccountId,
+    ) -> Result<Option<lee::EncryptedNote>> {
+        Ok(self
+            .0
+            .executor_ref()
+            .ask(GetRecoveryBinding { address })
             .send()
             .await?)
     }
