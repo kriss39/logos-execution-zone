@@ -98,6 +98,7 @@ Everything else (config, genesis) is static and ships with the image.
   - `gossip.listen_addr` and `bootstrap_peers` (generated from `base port + i` and the host's public IP)
 
   This override set is exactly the meeting's "overrideable" list. Everything else in those files is the static part we should ship.
+
 - **Keys.** They come from Vault and are written to `conf/sequencer/seq-N/bedrock_signing_key` with mode `0600`. That file is then bind-mounted into `/var/lib/sequencer_service/`, inside the data volume, because the key path is hardcoded to `<home>/bedrock_signing_key`.
 - **Version branches.** The role handles old LEZ versions: a `signing_key` config field and a `--signing-key` flag that the current binary doesn't have.
 - **Health.**
@@ -114,15 +115,15 @@ Things to raise with infra:
 
 ## Target shape
 
-| What | How |
-|---|---|
+| What                                                               | How                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Network config (tuning, `genesis`, `channel_params`, `cross_zone`) | One shared config per network, compiled into the binary from `lez/sequencer/service/networks/<net>.json` and picked with `--network local\|devnet\|testnet`. `--config` overrides it with a file. Every value is explicit in the file. channel_params are network constants: testnet uses 25e9/900/150/240, local uses 149/300/25/100. The genesis of `--network` or `--config` is used only with `--create-channel`. |
-| Channel ID, funding key, bedrock URL | `--channel-id`, `--funding-public-key`, `--bedrock-url` |
-| Listen addresses | Full `host:port` values, following #981: `--rpc-listen-address`, `--metrics-listen-address` (later the ops port: `/ping` `/health` `/metrics`), `--gossip-listen-address` (a fixed port, not `udp/0`) |
-| Bootstrap peers | Repeatable `--gossip-bootstrap-peer host:port`, expanded to `/dns/<host>/udp/<port>/quic-v1`, or `/ip4/...` for an IP. A full multiaddr is passed through as is. |
-| Data and keys | `start <home>` with the fixed layout from #979: `sequencer_config.json`, `channel_signing_key`, `bedrock_funding_public_key`. `--config` and `--channel-signing-key-file` point outside it, so infra can mount secrets outside the data volume. Only `setup` creates keys; `start` refuses to run without one. |
-| Secrets | Files only. Never in the JSON. `bedrock_config.auth.password` is still plaintext JSON; nobody uses auth today, so a `--bedrock-password-file` waits until someone does. |
-| Logs | Plain `env_logger` text for now. JSON only pays off with queryable fields (`tx_hash`, `block_id`, …), which needs structured logging (`log` key-values or `tracing`) at the call sites. |
+| Channel ID, funding key, bedrock URL                               | `--channel-id`, `--funding-public-key`, `--bedrock-url`                                                                                                                                                                                                                                                                                                                                                               |
+| Listen addresses                                                   | Full `host:port` values, following #981: `--rpc-listen-address`, `--metrics-listen-address` (later the ops port: `/ping` `/health` `/metrics`), `--gossip-listen-address` (a fixed port, not `udp/0`)                                                                                                                                                                                                                 |
+| Bootstrap peers                                                    | Repeatable `--gossip-bootstrap-peer host:port`, expanded to `/dns/<host>/udp/<port>/quic-v1`, or `/ip4/...` for an IP. A full multiaddr is passed through as is.                                                                                                                                                                                                                                                      |
+| Data and keys                                                      | `start <home>` with the fixed layout from #979: `sequencer_config.json`, `channel_signing_key`, `bedrock_funding_public_key`. `--config` and `--channel-signing-key-file` point outside it, so infra can mount secrets outside the data volume. Only `setup` creates keys; `start` refuses to run without one.                                                                                                        |
+| Secrets                                                            | Files only. Never in the JSON. `bedrock_config.auth.password` is still plaintext JSON; nobody uses auth today, so a `--bedrock-password-file` waits until someone does.                                                                                                                                                                                                                                               |
+| Logs                                                               | Plain `env_logger` text for now. JSON only pays off with queryable fields (`tx_hash`, `block_id`, …), which needs structured logging (`log` key-values or `tracing`) at the call sites.                                                                                                                                                                                                                               |
 
 **Conventions.**
 
@@ -167,7 +168,7 @@ Things to raise with infra:
 
 **Infra migration.** `files/lez/<env>/sequencer_config.json` and the Ansible `lez_sequencer_config_overrides` map go away. Instead:
 
-```
+```sh
 SEQUENCER_NETWORK=testnet
 SEQUENCER_CHANNEL_SIGNING_KEY_FILE=/run/secrets/channel_signing_key   # renamed from bedrock_signing_key by #979
 SEQUENCER_FUNDING_PUBLIC_KEY=<hex, from the blockchain keystore PoWClaim>
@@ -211,6 +212,12 @@ SEQUENCER_GOSSIP_BOOTSTRAP_PEER=<ip>:4040,<ip>:4041,...
 - [x] Deleted the per-service compose files, `docker-compose.override.yml`, and the configs only they used (`indexer/service/configs/docker/`, `docker-all-in-one/bedrock_funding_public_key`).
 - Decided: no `.env.devnet` or `.env.testnet`. Infra keeps templating its per-host compose with Ansible, because it needs N sequencers and Consul checks. The infra migration block in phase 3 is their spec.
 - Dropped: a compose smoke test in CI costs too much CI time for what it buys.
+- [x] Fixed `docker compose up` builds:
+  - All four sequencer nodes inherited a `build:` from a shared anchor, so the same image compiled four times at once. That raced on the shared Cargo cache ("revision not found") and ran the VM out of memory. Only seq-0 builds now; the followers use its image (`pull_policy: never`).
+  - Each image has its own Cargo cache `id`.
+  - The sequencer image installs `libpcsclite` (build and runtime). #979 made `sequencer_service` depend on `wallet`, which always pulls in keycard support. The image had been unbuildable on `dev` since; CI only builds images on tags.
+- [x] Bedrock's chain is in a volume (`bedrock_state`), like the sequencer and indexer state, so the whole local stack resumes across `stop`/`start` and rebuilds. `docker compose down -v` (or `just clean`) resets it. Before, Bedrock's chain lived in its container and was lost on every recreate, while the sequencer volumes outlived it, and the sequencers refused to start ("Stored checkpoint has channel activity but the channel does not exist"). The tests are unaffected: testcontainers removes volumes on teardown, and each test is its own compose project.
+- [ ] Follow-up: put keycard support in `wallet` behind a feature, so the sequencer's `stake`/`unstake` doesn't drag smart-card libraries into a server image.
 - Deferred to a later PR. These are dev- and CI-facing; infra pins image versions in Ansible either way.
   - [ ] Pin the unpinned build inputs. Do this one soon: `rzup install` pulls the newest r0vm on every image build, which must match `risc0-zkvm` 3.0.5 and can break proving with no code change.
     - `cargo-chef:latest-…`
