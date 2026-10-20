@@ -52,7 +52,7 @@ fn sequencer_config() -> (SequencerConfig, TempDir) {
             actions: Vec::new(),
         }),
         cross_zone: None,
-        metrics_address: None,
+        metrics_listen_address: None,
         gossip: None,
         channel_signing_key_file: None,
         funding_public_key: None,

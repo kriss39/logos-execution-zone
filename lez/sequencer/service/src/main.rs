@@ -117,8 +117,8 @@ struct StartArgs {
     #[clap(long, env = "SEQUENCER_FUNDING_PUBLIC_KEY")]
     funding_public_key: Option<String>,
     /// Overrides the config's `bedrock_config.node_url`.
-    #[clap(long, env = "SEQUENCER_BEDROCK_URL")]
-    bedrock_url: Option<String>,
+    #[clap(long, env = "SEQUENCER_BEDROCK_NODE_URL")]
+    bedrock_node_url: Option<String>,
     /// In hex. Overrides the config's `bedrock_config.channel_id`.
     #[clap(long, env = "SEQUENCER_CHANNEL_ID")]
     channel_id: Option<String>,
@@ -129,12 +129,12 @@ struct StartArgs {
         default_value = "127.0.0.1:3040"
     )]
     rpc_listen_address: SocketAddr,
-    /// Overrides the config's `metrics_address`.
+    /// Overrides the config's `metrics_listen_address`.
     #[clap(long, env = "SEQUENCER_METRICS_LISTEN_ADDRESS")]
     metrics_listen_address: Option<SocketAddr>,
     /// Gossip's QUIC (UDP) address. Turns gossip on if the config leaves it off.
-    #[clap(long, env = "SEQUENCER_GOSSIP_LISTEN_ADDRESS")]
-    gossip_listen_address: Option<SocketAddr>,
+    #[clap(long, env = "SEQUENCER_GOSSIP_LISTEN_ADDR")]
+    gossip_listen_addr: Option<SocketAddr>,
     /// `host:port` or a multiaddr; repeat, or comma-separate in the env var, for several.
     /// Replaces the config's `bootstrap_peers`, and turns gossip on.
     #[clap(long, env = "SEQUENCER_GOSSIP_BOOTSTRAP_PEER", value_delimiter = ',')]
@@ -199,7 +199,7 @@ async fn start(args: StartArgs) -> Result<()> {
     let config = load_config(&args)?;
     log_config(&config)?;
 
-    let ops_listener = match config.metrics_address {
+    let ops_listener = match config.metrics_listen_address {
         Some(address) => Some((ops::bind(address).await?, install_prometheus_recorder()?)),
         None => None,
     };
@@ -291,8 +291,8 @@ fn load_config(args: &StartArgs) -> Result<SequencerConfig> {
                 .context("Invalid --funding-public-key")?,
         );
     }
-    if let Some(url) = &args.bedrock_url {
-        config.bedrock_config.node_url = url.parse().context("Invalid --bedrock-url")?;
+    if let Some(url) = &args.bedrock_node_url {
+        config.bedrock_config.node_url = url.parse().context("Invalid --bedrock-node-url")?;
     }
     if let Some(channel_id) = &args.channel_id {
         let bytes: [u8; 32] = hex::decode(channel_id.trim_start_matches("0x"))
@@ -302,11 +302,11 @@ fn load_config(args: &StartArgs) -> Result<SequencerConfig> {
         config.bedrock_config.channel_id = bytes.into();
     }
     if args.metrics_listen_address.is_some() {
-        config.metrics_address = args.metrics_listen_address;
+        config.metrics_listen_address = args.metrics_listen_address;
     }
-    if args.gossip_listen_address.is_some() || !args.gossip_bootstrap_peer.is_empty() {
+    if args.gossip_listen_addr.is_some() || !args.gossip_bootstrap_peer.is_empty() {
         let gossip = config.gossip.get_or_insert_with(GossipConfig::default);
-        if let Some(address) = args.gossip_listen_address {
+        if let Some(address) = args.gossip_listen_addr {
             gossip.listen_addr = quic_multiaddr(address);
         }
         if !args.gossip_bootstrap_peer.is_empty() {
