@@ -183,17 +183,18 @@ async-stream = "0.3.6"
 strum = { version = "0.28.0", features = ["derive"] }
 
 # logos-blockchain master + zone-sdk fix that re-funds only posted and
-# next-to-post inscriptions and raises the publish depth to 100
-# (zone-sdk/refund-posted-only). Carries #3824, #3825 and #3826.
+# next-to-post inscriptions, raises the publish depth to 100 and stops
+# counting mined inscriptions against it (zone-sdk/refund-posted-only).
+# Carries #3824, #3825 and #3826.
 # Back to a tag once a release carries it.
-logos-blockchain-common-http-client = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "f305760eb27b2c7453185b8ba5ae461995e4ee03" }
-logos-blockchain-key-management-system-service = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "f305760eb27b2c7453185b8ba5ae461995e4ee03" }
-logos-blockchain-binary-codec = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "f305760eb27b2c7453185b8ba5ae461995e4ee03" }
-logos-blockchain-core = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "f305760eb27b2c7453185b8ba5ae461995e4ee03" }
-logos-blockchain-chain-broadcast-service = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "f305760eb27b2c7453185b8ba5ae461995e4ee03" }
-logos-blockchain-chain-service = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "f305760eb27b2c7453185b8ba5ae461995e4ee03" }
-logos-blockchain-zone-sdk = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "f305760eb27b2c7453185b8ba5ae461995e4ee03" }
-logos-blockchain-http-api-common = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "f305760eb27b2c7453185b8ba5ae461995e4ee03" }
+logos-blockchain-common-http-client = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "83a7d13692bd8c839d589c07b012cc6e78bd9cdb" }
+logos-blockchain-key-management-system-service = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "83a7d13692bd8c839d589c07b012cc6e78bd9cdb" }
+logos-blockchain-binary-codec = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "83a7d13692bd8c839d589c07b012cc6e78bd9cdb" }
+logos-blockchain-core = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "83a7d13692bd8c839d589c07b012cc6e78bd9cdb" }
+logos-blockchain-chain-broadcast-service = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "83a7d13692bd8c839d589c07b012cc6e78bd9cdb" }
+logos-blockchain-chain-service = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "83a7d13692bd8c839d589c07b012cc6e78bd9cdb" }
+logos-blockchain-zone-sdk = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "83a7d13692bd8c839d589c07b012cc6e78bd9cdb" }
+logos-blockchain-http-api-common = { git = "https://github.com/logos-blockchain/logos-blockchain.git", rev = "83a7d13692bd8c839d589c07b012cc6e78bd9cdb" }
 
 keycard-rs = { git = "https://github.com/keycard-tech/keycard-rs", rev = "9535a657ba04b1e6916de51777e22b4837c1a84d" }
 
