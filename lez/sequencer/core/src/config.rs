@@ -102,8 +102,8 @@ pub struct SequencerConfig {
     #[serde(default)]
     pub cross_zone: Option<CrossZoneConfig>,
     /// Address the Prometheus metrics exporter binds to.
-    #[serde(default = "default_metrics_address")]
-    pub metrics_address: Option<SocketAddr>,
+    #[serde(default = "default_metrics_listen_address")]
+    pub metrics_listen_address: Option<SocketAddr>,
     /// Sequencer p2p gossip configuration. `None` disables gossip.
     #[serde(default)]
     pub gossip: Option<GossipConfig>,
@@ -147,8 +147,8 @@ pub struct GenesisConfig {
 }
 
 impl SequencerConfig {
-    /// Address [`Self::metrics_address`] falls back to when the config omits it.
-    pub const DEFAULT_METRICS_ADDRESS: SocketAddr =
+    /// Address [`Self::metrics_listen_address`] falls back to when the config omits it.
+    pub const DEFAULT_METRICS_LISTEN_ADDRESS: SocketAddr =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 9000);
 
     pub fn from_path(path: &Path) -> Result<Self> {
@@ -232,8 +232,8 @@ fn default_gossip_listen_addr() -> libp2p::Multiaddr {
 }
 
 #[expect(clippy::unnecessary_wraps, reason = "Required by serde")]
-const fn default_metrics_address() -> Option<SocketAddr> {
-    Some(SequencerConfig::DEFAULT_METRICS_ADDRESS)
+const fn default_metrics_listen_address() -> Option<SocketAddr> {
+    Some(SequencerConfig::DEFAULT_METRICS_LISTEN_ADDRESS)
 }
 
 /// Percentage of the mandatory fee reserved on every funded Bedrock

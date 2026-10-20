@@ -118,8 +118,8 @@ Things to raise with infra:
 | What                                                               | How                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Network config (tuning, `genesis`, `channel_params`, `cross_zone`) | One shared config per network, compiled into the binary from `lez/sequencer/service/networks/<net>.json` and picked with `--network local\|devnet\|testnet`. `--config` overrides it with a file. Every value is explicit in the file. channel_params are network constants: testnet uses 25e9/900/150/240, local uses 149/300/25/100. The genesis of `--network` or `--config` is used only with `--create-channel`. |
-| Channel ID, funding key, bedrock URL                               | `--channel-id`, `--funding-public-key`, `--bedrock-url`                                                                                                                                                                                                                                                                                                                                                               |
-| Listen addresses                                                   | Full `host:port` values, following #981: `--rpc-listen-address`, `--metrics-listen-address` (later the ops port: `/ping` `/health` `/metrics`), `--gossip-listen-address` (a fixed port, not `udp/0`)                                                                                                                                                                                                                 |
+| Channel ID, funding key, bedrock URL                               | `--channel-id`, `--funding-public-key`, `--bedrock-node-url`                                                                                                                                                                                                                                                                                                                                                               |
+| Listen addresses                                                   | Full `host:port` values, following #981: `--rpc-listen-address`, `--metrics-listen-address` (later the ops port: `/ping` `/health` `/metrics`), `--gossip-listen-addr` (a fixed port, not `udp/0`)                                                                                                                                                                                                                 |
 | Bootstrap peers                                                    | Repeatable `--gossip-bootstrap-peer host:port`, expanded to `/dns/<host>/udp/<port>/quic-v1`, or `/ip4/...` for an IP. A full multiaddr is passed through as is.                                                                                                                                                                                                                                                      |
 | Data and keys                                                      | `start <home>` with the fixed layout from #979: `sequencer_config.json`, `channel_signing_key`, `bedrock_funding_public_key`. `--config` and `--channel-signing-key-file` point outside it, so infra can mount secrets outside the data volume. Only `setup` creates keys; `start` refuses to run without one.                                                                                                        |
 | Secrets                                                            | Files only. Never in the JSON. `bedrock_config.auth.password` is still plaintext JSON; nobody uses auth today, so a `--bedrock-password-file` waits until someone does.                                                                                                                                                                                                                                               |
@@ -148,7 +148,7 @@ Things to raise with infra:
 ### 2. Config layering and CLI
 
 - [x] Dev (#979, #981) already landed: `deny_unknown_fields` on the sequencer config, the fixed home layout, key creation only in `setup`, and `--rpc-listen-address`.
-- [x] `start` flags and env vars: `--config`, `--channel-signing-key-file`, `--funding-public-key`, `--bedrock-url`, `--channel-id`, `--metrics-listen-address` (was `--metrics-address`, a breaking change for infra), `--gossip-listen-address`, and a repeatable `--gossip-bootstrap-peer`. Plus the naming test.
+- [x] `start` flags and env vars: `--config`, `--channel-signing-key-file`, `--funding-public-key`, `--bedrock-node-url`, `--channel-id`, `--metrics-listen-address` (was `--metrics-address`, a breaking change for infra), `--gossip-listen-addr`, and a repeatable `--gossip-bootstrap-peer`. Plus the naming test.
 - [x] Gossip dials `/dns` addresses (libp2p `dns` feature), so compose service names work as bootstrap peers.
 - [x] Redacted config dump as the first log line.
 - [ ] `deny_unknown_fields` for the indexer. `lez-indexer-module/config/indexer_config.json` still carries `backoff`, so drop it there first.
@@ -172,10 +172,10 @@ Things to raise with infra:
 SEQUENCER_NETWORK=testnet
 SEQUENCER_CHANNEL_SIGNING_KEY_FILE=/run/secrets/channel_signing_key   # renamed from bedrock_signing_key by #979
 SEQUENCER_FUNDING_PUBLIC_KEY=<hex, from the blockchain keystore PoWClaim>
-SEQUENCER_BEDROCK_URL=http://blockchain:8080
+SEQUENCER_BEDROCK_NODE_URL=http://blockchain:8080
 SEQUENCER_RPC_LISTEN_ADDRESS=0.0.0.0:3040
 SEQUENCER_METRICS_LISTEN_ADDRESS=0.0.0.0:9000                         # was --metrics-address
-SEQUENCER_GOSSIP_LISTEN_ADDRESS=0.0.0.0:4040
+SEQUENCER_GOSSIP_LISTEN_ADDR=0.0.0.0:4040
 SEQUENCER_GOSSIP_BOOTSTRAP_PEER=<ip>:4040,<ip>:4041,...
 ```
 
@@ -208,7 +208,7 @@ SEQUENCER_GOSSIP_BOOTSTRAP_PEER=<ip>:4040,<ip>:4041,...
 - [x] One root `docker-compose.yml`, a local stack only: dev Bedrock, the four-sequencer devnet, indexer and explorer, plus Prometheus and Grafana behind `--profile monitoring`.
   - Every host port, image, config and key path is `${VAR:-default}`, all listed in a committed `.env.local`. A personal `.env` is gitignored.
   - Sequencers are configured through their `SEQUENCER_*` env: the key is mounted at `/run/secrets/channel_signing_key`, and the funding key is an env var, not a mounted file.
-  - `bedrock/docker-compose.yml` stays a file of its own, included by the root, because the Docker-backed tests start it alone. Its `PORT` is now `BEDROCK_PORT`.
+  - `bedrock/docker-compose.yml` stays a file of its own, included by the root, because the Docker-backed tests start it alone. Its `PORT` is now `LEZ_COMPOSE_BEDROCK_PORT`. Compose-only variables are `LEZ_COMPOSE_*`, apart from the binaries' own `SEQUENCER_*`.
 - [x] Deleted the per-service compose files, `docker-compose.override.yml`, and the configs only they used (`indexer/service/configs/docker/`, `docker-all-in-one/bedrock_funding_public_key`).
 - Decided: no `.env.devnet` or `.env.testnet`. Infra keeps templating its per-host compose with Ansible, because it needs N sequencers and Consul checks. The infra migration block in phase 3 is their spec.
 - Dropped: a compose smoke test in CI costs too much CI time for what it buys.

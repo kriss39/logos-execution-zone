@@ -307,7 +307,7 @@ fn setup_sequencer_config() -> SequencerConfig {
             actions: vec![],
         }),
         cross_zone: None,
-        metrics_address: None,
+        metrics_listen_address: None,
         gossip: None,
         channel_signing_key_file: None,
         funding_public_key: None,

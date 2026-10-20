@@ -19,10 +19,10 @@ include:
 # The image has the `mdns` feature, so the nodes find each other on the compose network without
 # any gossip address configured.
 x-sequencer: &sequencer
-  image: ${LEZ_SEQUENCER_IMAGE:-lez/sequencer_service:mdns}
+  image: ${LEZ_COMPOSE_SEQUENCER_IMAGE:-lez/sequencer_service:mdns}
   depends_on:
-    - logos-blockchain-node-0
-    - indexer_service
+    logos-blockchain-node-0: { condition: service_healthy }
+    indexer_service: { condition: service_healthy }
   # Lets a node reach a Bedrock published on the host, on Linux too.
   extra_hosts:
     - "host.docker.internal:host-gateway"
@@ -30,8 +30,8 @@ x-sequencer: &sequencer
 x-sequencer-environment: &sequencer_environment
   SEQUENCER_CONFIG: /etc/sequencer_service/sequencer_config.json
   SEQUENCER_CHANNEL_SIGNING_KEY_FILE: /run/secrets/channel_signing_key
-  SEQUENCER_FUNDING_PUBLIC_KEY: ${LEZ_FUNDING_PUBLIC_KEY:-2e03b2eff5a45478e7e79668d2a146cf2c5c7925bce927f2b1c67f2ab4fc0d26}
-  SEQUENCER_BEDROCK_URL: ${LEZ_BEDROCK_URL:-http://logos-blockchain-node-0:18080}
+  SEQUENCER_FUNDING_PUBLIC_KEY: ${LEZ_COMPOSE_FUNDING_PUBLIC_KEY:-2e03b2eff5a45478e7e79668d2a146cf2c5c7925bce927f2b1c67f2ab4fc0d26}
+  SEQUENCER_BEDROCK_NODE_URL: ${LEZ_COMPOSE_BEDROCK_NODE_URL:-http://logos-blockchain-node-0:18080}
 
 # Only seq-0 keeps the config's genesis and creates the channel. The others drop it, so one
 # starting before the channel exists waits for it instead of creating a second one.
@@ -65,11 +65,11 @@ services:
       <<: *sequencer_environment
       SEQUENCER_CREATE_CHANNEL: "true"
     ports:
-      - "${LEZ_SEQ_0_RPC_PORT:-3040}:3040"
-      - "${LEZ_SEQ_0_METRICS_PORT:-9000}:9000"
+      - "${LEZ_COMPOSE_SEQ_0_RPC_PORT:-3040}:3040"
+      - "${LEZ_COMPOSE_SEQ_0_METRICS_PORT:-9000}:9000"
     volumes:
-      - ${LEZ_SEQUENCER_CONFIG_FILE:-./lez/configs/docker-all-in-one/devnet/sequencer_config.json}:/etc/sequencer_service/sequencer_config.json:ro
-      - ${LEZ_SEQ_0_KEY_FILE:-./lez/configs/docker-all-in-one/devnet/seq-0/channel_signing_key}:/run/secrets/channel_signing_key:ro
+      - ${LEZ_COMPOSE_SEQUENCER_CONFIG_FILE:-./lez/configs/docker-all-in-one/devnet/sequencer_config.json}:/etc/sequencer_service/sequencer_config.json:ro
+      - ${LEZ_COMPOSE_SEQ_0_KEY_FILE:-./lez/configs/docker-all-in-one/devnet/seq-0/channel_signing_key}:/run/secrets/channel_signing_key:ro
       - sequencer_data_0:/var/lib/sequencer_service
 
   sequencer_service_1:
@@ -78,13 +78,13 @@ services:
     pull_policy: never
     environment: *follower_environment
     depends_on:
-      - sequencer_service_0
+      sequencer_service_0: { condition: service_healthy }
     ports:
-      - "${LEZ_SEQ_1_RPC_PORT:-3041}:3040"
-      - "${LEZ_SEQ_1_METRICS_PORT:-9001}:9000"
+      - "${LEZ_COMPOSE_SEQ_1_RPC_PORT:-3041}:3040"
+      - "${LEZ_COMPOSE_SEQ_1_METRICS_PORT:-9001}:9000"
     volumes:
-      - ${LEZ_SEQUENCER_CONFIG_FILE:-./lez/configs/docker-all-in-one/devnet/sequencer_config.json}:/etc/sequencer_service/sequencer_config.json:ro
-      - ${LEZ_SEQ_1_KEY_FILE:-./lez/configs/docker-all-in-one/devnet/seq-1/channel_signing_key}:/run/secrets/channel_signing_key:ro
+      - ${LEZ_COMPOSE_SEQUENCER_CONFIG_FILE:-./lez/configs/docker-all-in-one/devnet/sequencer_config.json}:/etc/sequencer_service/sequencer_config.json:ro
+      - ${LEZ_COMPOSE_SEQ_1_KEY_FILE:-./lez/configs/docker-all-in-one/devnet/seq-1/channel_signing_key}:/run/secrets/channel_signing_key:ro
       - sequencer_data_1:/var/lib/sequencer_service
 
   sequencer_service_2:
@@ -93,13 +93,13 @@ services:
     pull_policy: never
     environment: *follower_environment
     depends_on:
-      - sequencer_service_0
+      sequencer_service_0: { condition: service_healthy }
     ports:
-      - "${LEZ_SEQ_2_RPC_PORT:-3042}:3040"
-      - "${LEZ_SEQ_2_METRICS_PORT:-9002}:9000"
+      - "${LEZ_COMPOSE_SEQ_2_RPC_PORT:-3042}:3040"
+      - "${LEZ_COMPOSE_SEQ_2_METRICS_PORT:-9002}:9000"
     volumes:
-      - ${LEZ_SEQUENCER_CONFIG_FILE:-./lez/configs/docker-all-in-one/devnet/sequencer_config.json}:/etc/sequencer_service/sequencer_config.json:ro
-      - ${LEZ_SEQ_2_KEY_FILE:-./lez/configs/docker-all-in-one/devnet/seq-2/channel_signing_key}:/run/secrets/channel_signing_key:ro
+      - ${LEZ_COMPOSE_SEQUENCER_CONFIG_FILE:-./lez/configs/docker-all-in-one/devnet/sequencer_config.json}:/etc/sequencer_service/sequencer_config.json:ro
+      - ${LEZ_COMPOSE_SEQ_2_KEY_FILE:-./lez/configs/docker-all-in-one/devnet/seq-2/channel_signing_key}:/run/secrets/channel_signing_key:ro
       - sequencer_data_2:/var/lib/sequencer_service
 
   sequencer_service_3:
@@ -108,17 +108,17 @@ services:
     pull_policy: never
     environment: *follower_environment
     depends_on:
-      - sequencer_service_0
+      sequencer_service_0: { condition: service_healthy }
     ports:
-      - "${LEZ_SEQ_3_RPC_PORT:-3043}:3040"
-      - "${LEZ_SEQ_3_METRICS_PORT:-9003}:9000"
+      - "${LEZ_COMPOSE_SEQ_3_RPC_PORT:-3043}:3040"
+      - "${LEZ_COMPOSE_SEQ_3_METRICS_PORT:-9003}:9000"
     volumes:
-      - ${LEZ_SEQUENCER_CONFIG_FILE:-./lez/configs/docker-all-in-one/devnet/sequencer_config.json}:/etc/sequencer_service/sequencer_config.json:ro
-      - ${LEZ_SEQ_3_KEY_FILE:-./lez/configs/docker-all-in-one/devnet/seq-3/channel_signing_key}:/run/secrets/channel_signing_key:ro
+      - ${LEZ_COMPOSE_SEQUENCER_CONFIG_FILE:-./lez/configs/docker-all-in-one/devnet/sequencer_config.json}:/etc/sequencer_service/sequencer_config.json:ro
+      - ${LEZ_COMPOSE_SEQ_3_KEY_FILE:-./lez/configs/docker-all-in-one/devnet/seq-3/channel_signing_key}:/run/secrets/channel_signing_key:ro
       - sequencer_data_3:/var/lib/sequencer_service
 
   indexer_service:
-    image: ${LEZ_INDEXER_IMAGE:-lez/indexer_service}
+    image: ${LEZ_COMPOSE_INDEXER_IMAGE:-lez/indexer_service}
     build:
       context: .
       dockerfile: lez/indexer/service/Dockerfile
@@ -126,25 +126,25 @@ services:
         risc0_base: "service:risc0_base"
     container_name: indexer_service
     depends_on:
-      - logos-blockchain-node-0
+      logos-blockchain-node-0: { condition: service_healthy }
     ports:
-      - "${LEZ_INDEXER_RPC_PORT:-8779}:8779"
+      - "${LEZ_COMPOSE_INDEXER_RPC_PORT:-8779}:8779"
     volumes:
-      - ${LEZ_INDEXER_CONFIG_FILE:-./lez/configs/docker-all-in-one/indexer_config.json}:/etc/indexer_service/indexer_config.json:ro
+      - ${LEZ_COMPOSE_INDEXER_CONFIG_FILE:-./lez/configs/docker-all-in-one/indexer_config.json}:/etc/indexer_service/indexer_config.json:ro
       - indexer_data:/var/lib/indexer_service
 
   explorer_service:
-    image: ${LEZ_EXPLORER_IMAGE:-lez/explorer_service}
+    image: ${LEZ_COMPOSE_EXPLORER_IMAGE:-lez/explorer_service}
     build:
       context: .
       dockerfile: lez/explorer_service/Dockerfile
     container_name: explorer_service
     depends_on:
-      - indexer_service
+      indexer_service: { condition: service_healthy }
     environment:
       INDEXER_RPC_URL: http://indexer_service:8779
     ports:
-      - "${LEZ_EXPLORER_PORT:-8080}:8080"
+      - "${LEZ_COMPOSE_EXPLORER_PORT:-8080}:8080"
 
   # Scrapes the sequencers' metrics through their host ports, so it sees natively run ones
   # (`just run-sequencer`) the same way as the compose ones.
@@ -155,7 +155,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
     ports:
-      - "${LEZ_PROMETHEUS_PORT:-9090}:9090"
+      - "${LEZ_COMPOSE_PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -167,7 +167,7 @@ services:
     container_name: grafana
     profiles: [monitoring]
     ports:
-      - "${LEZ_GRAFANA_PORT:-3000}:3000"
+      - "${LEZ_COMPOSE_GRAFANA_PORT:-3000}:3000"
     environment:
       # Dev-only: open Grafana with no login, full access.
       - GF_AUTH_ANONYMOUS_ENABLED=true
