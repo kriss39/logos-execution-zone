@@ -217,10 +217,10 @@ SEQUENCER_GOSSIP_BOOTSTRAP_PEER=<ip>:4040,<ip>:4041,...
   - Each image has its own Cargo cache `id`.
   - The sequencer image installs `libpcsclite` (build and runtime). #979 made `sequencer_service` depend on `wallet`, which always pulls in keycard support. The image had been unbuildable on `dev` since; CI only builds images on tags.
 - [x] Bedrock's chain is in a volume (`bedrock_state`), like the sequencer and indexer state, so the whole local stack resumes across `stop`/`start` and rebuilds. `docker compose down -v` (or `just clean`) resets it. Before, Bedrock's chain lived in its container and was lost on every recreate, while the sequencer volumes outlived it, and the sequencers refused to start ("Stored checkpoint has channel activity but the channel does not exist"). The tests are unaffected: testcontainers removes volumes on teardown, and each test is its own compose project.
+- [x] Dropped cargo-chef from the sequencer and indexer images, and `risc0_base` is now on `rust:1.98.1-slim-trixie`. The `target/` cache mount already made `cook` redundant locally, and in CI neither its layer (`mode=min`) nor the mount is cached, so every publish compiled twice from scratch (v0.3.1: `cook` 1053s, then `build` 968s).
 - [ ] Follow-up: put keycard support in `wallet` behind a feature, so the sequencer's `stake`/`unstake` doesn't drag smart-card libraries into a server image.
 - Deferred to a later PR. These are dev- and CI-facing; infra pins image versions in Ansible either way.
   - [ ] Pin the unpinned build inputs. Do this one soon: `rzup install` pulls the newest r0vm on every image build, which must match `risc0-zkvm` 3.0.5 and can break proving with no code change.
-    - `cargo-chef:latest-…`
     - `rzup install` → `rzup install r0vm 3.0.5`
     - the arm64 `release-3.0` branch → a tag
     - the explorer's `cargo-binstall` `releases/latest` (x86_64-only tarball) and unversioned `cargo-leptos`

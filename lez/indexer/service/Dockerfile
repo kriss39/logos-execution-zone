@@ -1,5 +1,5 @@
-# Chef stage
-FROM risc0_base AS chef
+# Builder stage
+FROM risc0_base AS builder
 
 WORKDIR /indexer_service
 
@@ -8,27 +8,9 @@ WORKDIR /indexer_service
 # r0vm subprocess per execution.
 ARG FEATURES="prove"
 
-# Planner stage - generates dependency recipe
-FROM chef AS planner
-COPY . .
-RUN cargo chef prepare --bin indexer_service --recipe-path recipe.json
-
-# Builder stage - builds dependencies and application
-FROM chef AS builder
-ARG FEATURES
-COPY --from=planner /indexer_service/recipe.json recipe.json
-# Build dependencies only (this layer will be cached)
-RUN --mount=type=cache,id=indexer-cargo-registry-index,target=/usr/local/cargo/registry/index \
-  --mount=type=cache,id=indexer-cargo-registry-cache,target=/usr/local/cargo/registry/cache \
-  --mount=type=cache,id=indexer-cargo-git,target=/usr/local/cargo/git \
-  --mount=type=cache,target=/indexer_service/target \
-  cargo chef cook --bin indexer_service ${FEATURES:+--features "$FEATURES"} \
-  --release --recipe-path recipe.json
-
-# Copy source code
 COPY . .
 
-# Build the actual application and copy the binary out of the cache mount
+# `target` is a cache mount, so rebuilds only recompile what changed; copy the binary out of it.
 RUN --mount=type=cache,id=indexer-cargo-registry-index,target=/usr/local/cargo/registry/index \
   --mount=type=cache,id=indexer-cargo-registry-cache,target=/usr/local/cargo/registry/cache \
   --mount=type=cache,id=indexer-cargo-git,target=/usr/local/cargo/git \
