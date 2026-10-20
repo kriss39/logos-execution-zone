@@ -32,12 +32,9 @@ enum Command {
     /// Creates a home with its config and Bedrock funding public key.
     Setup {
         home: PathBuf,
-        /// Config to copy into the home.
-        #[clap(long, required_unless_present = "network", conflicts_with = "network")]
-        config: Option<PathBuf>,
-        /// Built-in network config to copy into the home, instead of `--config`.
+        /// Config to copy into the home, e.g. one of `lez/sequencer/service/networks/`.
         #[clap(long)]
-        network: Option<Network>,
+        config: PathBuf,
         /// Public key, in hex, of a funded key in the Bedrock node's wallet; it pays the
         /// node's inscriptions.
         #[clap(long)]
@@ -80,14 +77,6 @@ enum Command {
     },
 }
 
-/// Networks whose config is compiled in.
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum Network {
-    Local,
-    Devnet,
-    Testnet,
-}
-
 /// Each option also reads `SEQUENCER_<OPTION>`. A flag wins over its env var, and both win over
 /// the config.
 #[derive(Debug, clap::Args)]
@@ -96,12 +85,9 @@ struct StartArgs {
     #[clap(env = "SEQUENCER_HOME")]
     home: PathBuf,
     /// Defaults to `<home>/sequencer_config.json`.
-    #[clap(long, env = "SEQUENCER_CONFIG", conflicts_with = "network")]
+    #[clap(long, env = "SEQUENCER_CONFIG")]
     config: Option<PathBuf>,
-    /// Runs on a built-in network config instead of `--config`.
-    #[clap(long, env = "SEQUENCER_NETWORK")]
-    network: Option<Network>,
-    /// Keeps the genesis of `--config` or `--network`, so the channel is created if it does not
+    /// Keeps the genesis of `--config`, so the channel is created if it does not
     /// exist. Without it, a node pointed at the wrong channel fails instead of creating that one.
     /// A home's own config keeps whatever `setup` decided.
     #[clap(long, env = "SEQUENCER_CREATE_CHANNEL")]
@@ -141,16 +127,6 @@ struct StartArgs {
     gossip_bootstrap_peer: Vec<String>,
 }
 
-impl Network {
-    const fn config(self) -> &'static str {
-        match self {
-            Self::Local => include_str!("../networks/local.json"),
-            Self::Devnet => include_str!("../networks/devnet.json"),
-            Self::Testnet => include_str!("../networks/testnet.json"),
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
@@ -160,17 +136,11 @@ async fn main() -> Result<()> {
         Command::Setup {
             home,
             config,
-            network,
             funding_public_key,
             create_channel,
         } => {
-            let template = if let Some(network) = network {
-                network.config().to_owned()
-            } else {
-                let path = config.expect("clap requires `--config` without `--network`");
-                std::fs::read_to_string(&path)
-                    .with_context(|| format!("Failed to read {}", path.display()))?
-            };
+            let template = std::fs::read_to_string(&config)
+                .with_context(|| format!("Failed to read {}", config.display()))?;
             operator::setup(&home, &template, &funding_public_key, create_channel)
         }
         Command::Start(args) => start(args).await,
@@ -255,27 +225,22 @@ async fn start(args: StartArgs) -> Result<()> {
 
 /// The config file with `args` applied over it.
 fn load_config(args: &StartArgs) -> Result<SequencerConfig> {
-    let explicit_config = args.network.is_some() || args.config.is_some();
+    let explicit_config = args.config.is_some();
     ensure!(
         explicit_config || !args.create_channel,
-        "--create-channel needs --config or --network; a home's own config keeps what `setup` decided"
+        "--create-channel needs --config; a home's own config keeps what `setup` decided"
     );
-    let mut config = if let Some(network) = args.network {
-        SequencerConfig::from_json(network.config())
-            .with_context(|| format!("Failed to read the built-in {network:?} config"))?
-    } else {
-        let config_path = args
-            .config
-            .clone()
-            .unwrap_or_else(|| args.home.join(operator::CONFIG_FILE));
-        ensure!(
-            config_path.exists(),
-            "{} does not exist; run `setup` first",
-            config_path.display()
-        );
-        SequencerConfig::from_path(&config_path)
-            .with_context(|| format!("Failed to read {}", config_path.display()))?
-    };
+    let config_path = args
+        .config
+        .clone()
+        .unwrap_or_else(|| args.home.join(operator::CONFIG_FILE));
+    ensure!(
+        config_path.exists(),
+        "{} does not exist; run `setup` first",
+        config_path.display()
+    );
+    let mut config = SequencerConfig::from_path(&config_path)
+        .with_context(|| format!("Failed to read {}", config_path.display()))?;
     if explicit_config && !args.create_channel {
         config.genesis = None;
     }
@@ -381,7 +346,7 @@ fn parse_gossip_peer(peer: &str) -> Result<Multiaddr> {
 
 /// Installs the recorder, whose metrics the ops server renders.
 fn install_prometheus_recorder() -> Result<PrometheusHandle> {
-    /// Ladder for `*_seconds` histograms, densest across the 1–100 ms band where
+    /// Ladder for `*_seconds` histograms, densest across the 1-100 ms band where
     /// block production and transaction application actually land.
     const LATENCY_BUCKETS: &[f64] = &[
         0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
@@ -486,9 +451,13 @@ mod tests {
     }
 
     #[test]
-    fn built_in_networks_parse() {
-        for network in <Network as clap::ValueEnum>::value_variants() {
-            SequencerConfig::from_json(network.config()).unwrap();
+    fn network_configs_parse() {
+        for config in [
+            include_str!("../networks/local.json"),
+            include_str!("../networks/devnet.json"),
+            include_str!("../networks/testnet.json"),
+        ] {
+            SequencerConfig::from_json(config).unwrap();
         }
     }
 }

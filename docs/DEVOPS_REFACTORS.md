@@ -7,7 +7,7 @@
 - channel id and funding key
 - bootstrap peers
 
-Everything else (config, genesis) is static and ships with the image.
+Everything else is static: one config file per network, kept in this repo and mounted by infra. Only the channel's founder uses its genesis; every other node replays the genesis from the channel.
 
 **Inputs.**
 
@@ -117,7 +117,7 @@ Things to raise with infra:
 
 | What                                                               | How                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Network config (tuning, `genesis`, `channel_params`, `cross_zone`) | One shared config per network, compiled into the binary from `lez/sequencer/service/networks/<net>.json` and picked with `--network local\|devnet\|testnet`. `--config` overrides it with a file. Every value is explicit in the file. channel_params are network constants: testnet uses 25e9/900/150/240, local uses 149/300/25/100. The genesis of `--network` or `--config` is used only with `--create-channel`. |
+| Network config (tuning, `genesis`, `channel_params`, `cross_zone`) | One shared config per network in `lez/sequencer/service/networks/<net>.json`, passed with `--config` (infra mounts it). Not compiled in: node tuning should change without a release, and only the founder needs the genesis. channel_params are network constants: testnet uses 25e9/900/150/240, local uses 149/300/25/100. The genesis is used only with `--create-channel`. |
 | Channel ID, funding key, bedrock URL                               | `--channel-id`, `--funding-public-key`, `--bedrock-node-url`                                                                                                                                                                                                                                                                                                                                                               |
 | Listen addresses                                                   | Full `host:port` values, following #981: `--rpc-listen-address`, `--metrics-listen-address` (later the ops port: `/ping` `/health` `/metrics`), `--gossip-listen-addr` (a fixed port, not `udp/0`)                                                                                                                                                                                                                 |
 | Bootstrap peers                                                    | Repeatable `--gossip-bootstrap-peer host:port`, expanded to `/dns/<host>/udp/<port>/quic-v1`, or `/ip4/...` for an IP. A full multiaddr is passed through as is.                                                                                                                                                                                                                                                      |
@@ -156,20 +156,20 @@ Things to raise with infra:
 
 ### 3. Static config and genesis
 
-- [x] Network configs compiled into the binary (`--network`, `SEQUENCER_NETWORK`) for `start` and `setup`. `--config` stays as the file override. No image change is needed.
+- [x] One config file per network in `lez/sequencer/service/networks/`, passed to `start` and `setup` with `--config`. An earlier iteration compiled them in behind `--network`; dropped, because the genesis only matters to the channel's founder (joining nodes replay it from the channel and read the channel params from the finalized chain), and node tuning should not need a release.
   - `local` is the former `configs/debug/sequencer_config.json`.
   - `devnet` and `testnet` are ported from infra-logos to the new schema (#979). infra's copies use the old schema and no longer parse.
   - The dead `configs/docker/sequencer_config.json` is deleted.
-- [x] `start --network` drops the genesis unless `--create-channel`, mirroring `setup`. Phase 6 extends this to `--config`.
-- [x] A unit test checks that every built-in network config parses and passes validation.
+- [x] `start --config` drops the genesis unless `--create-channel`, mirroring `setup`.
+- [x] A unit test checks that every network config parses and passes validation.
 - [ ] Founding set for the devnet/testnet relaunch. Their `genesis.actions` are empty: the new `supply_account` takes a recipient public key, not the old `account_id`, and the old stake signatures predate the actor rework. Needed from infra/devs: the founding channel signing public keys, who holds the ownership keys, and the supply recipients' public keys. Then generalise `tools/devnet_configs` to sign the stakes into `networks/<net>.json`.
 - [ ] Indexer: still carries its own `channel_id`. Covered by the indexer-merge PR.
 - [ ] Hand infra the migration below.
 
-**Infra migration.** `files/lez/<env>/sequencer_config.json` and the Ansible `lez_sequencer_config_overrides` map go away. Instead:
+**Infra migration.** `files/lez/<env>/sequencer_config.json` is replaced by our `networks/<env>.json`, mounted as is, and the Ansible `lez_sequencer_config_overrides` map goes away. Instead:
 
 ```sh
-SEQUENCER_NETWORK=testnet
+SEQUENCER_CONFIG=/etc/sequencer_service/sequencer_config.json         # networks/testnet.json, mounted read-only
 SEQUENCER_CHANNEL_SIGNING_KEY_FILE=/run/secrets/channel_signing_key   # renamed from bedrock_signing_key by #979
 SEQUENCER_FUNDING_PUBLIC_KEY=<hex, from the blockchain keystore PoWClaim>
 SEQUENCER_BEDROCK_NODE_URL=http://blockchain:8080
@@ -179,7 +179,7 @@ SEQUENCER_GOSSIP_LISTEN_ADDR=0.0.0.0:4040
 SEQUENCER_GOSSIP_BOOTSTRAP_PEER=<ip>:4040,<ip>:4041,...
 ```
 
-`start` with `--network` needs no `setup`. The home only holds the database.
+`start --config` needs no `setup`. The home only holds the database.
 
 ### 4. Observability
 
@@ -231,7 +231,7 @@ SEQUENCER_GOSSIP_BOOTSTRAP_PEER=<ip>:4040,<ip>:4041,...
 
 - [x] The sequencer waits for the channel itself, replacing the compose `x-await-channel` entrypoint (the `grep | cut` shell over the JSON).
   - `--wait-for-channel` (`SEQUENCER_WAIT_FOR_CHANNEL`): a node with no genesis waits for the channel's creator instead of failing. Without the flag, a node pointed at a wrong channel still fails at once.
-  - `--create-channel` now applies to `--config` as well as `--network`: an explicit config keeps its genesis only with it. A home's config keeps what `setup` decided, and `--create-channel` there is an error.
+  - `--create-channel`: an explicit `--config` keeps its genesis only with it. A home's config keeps what `setup` decided, and `--create-channel` there is an error.
   - Compose: seq-0 sets `SEQUENCER_CREATE_CHANNEL`, the followers `SEQUENCER_WAIT_FOR_CHANNEL`. Followers don't need the genesis: they replay the channel's genesis block on the bare initial state.
 - [x] SIGTERM during startup (e.g. while waiting for the channel) stops the node cleanly. It used to be ignored until startup finished, then SIGKILLed with RocksDB open.
 - [x] Staking tools in the image: #979 folded `submit_stake` and `bedrock_pubkey` into the `setup`, `stake` and `unstake` subcommands of `sequencer_service`.
@@ -239,5 +239,4 @@ SEQUENCER_GOSSIP_BOOTSTRAP_PEER=<ip>:4040,<ip>:4041,...
 ## Open questions
 
 - Infra runs four environments, `testnet-legacy` and `devnet-classic` among them, on different LEZ versions. Which of those still need support while the CLI changes land?
-- Which network's genesis should each image tag embed? All known networks selected by `--network`, or one per release, the way logos-blockchain does it?
 - Is `GENESIS_STAKE_FUNDING_KEY = [9; 32]` (`lez/sequencer/core/src/lib.rs`) meant for real networks?
