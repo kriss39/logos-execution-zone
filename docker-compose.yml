@@ -23,9 +23,6 @@ x-sequencer: &sequencer
   depends_on:
     logos-blockchain-node-0: { condition: service_healthy }
     indexer_service: { condition: service_healthy }
-  # Lets a node reach a Bedrock published on the host, on Linux too.
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
 
 x-sequencer-environment: &sequencer_environment
   SEQUENCER_CONFIG: /etc/sequencer_service/sequencer_config.json
