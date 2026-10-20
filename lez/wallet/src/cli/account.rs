@@ -678,6 +678,7 @@ impl WalletSubcommand for ImportSubcommand {
                     .storage_mut()
                     .key_chain_mut()
                     .add_imported_private_account(key_chain, chain_index, account);
+                wallet_core.storage_mut().rewind_skipped_history();
 
                 wallet_core.store_persistent_data()?;
 
