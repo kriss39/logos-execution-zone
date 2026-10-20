@@ -1999,6 +1999,7 @@ dependencies = [
 name = "core_ffi"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bip39",
  "cbindgen",
  "common",
@@ -11378,6 +11379,7 @@ dependencies = [
  "sequencer_executor_actor",
  "sequencer_gossip_actor",
  "sequencer_rpc_server_actor",
+ "sequencer_service_rpc",
  "sequencer_slasher_actor",
  "sequencer_stake_core",
  "sequencer_storage_actor",

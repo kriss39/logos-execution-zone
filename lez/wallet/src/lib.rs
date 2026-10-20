@@ -38,7 +38,7 @@ use lee_core::{
     program::{MessageBody, MessageData, Publication},
 };
 use log::warn;
-use sequencer_service_rpc::{RpcClient as _, SequencerClient, SequencerClientBuilder};
+use sequencer_service_rpc::{RpcClient, SequencerClient, SequencerClientBuilder};
 use storage::{Storage, StorageKey, spent_nullifiers::SpentNullifiers};
 use tokio::io::AsyncWriteExt as _;
 use url::Url;
@@ -163,7 +163,146 @@ struct Receipt {
     commitment: Commitment,
 }
 
-pub struct WalletCore {
+#[expect(async_fn_in_trait, reason = "For internal usage only")]
+pub trait WalletSequencerClient: Clone {
+    async fn send_transaction(&self, tx: LeeTransaction) -> Result<HashType>;
+
+    async fn get_block(&self, block_id: BlockId) -> Result<Option<Block>>;
+
+    async fn get_block_range(
+        &self,
+        start_block_id: BlockId,
+        end_block_id: BlockId,
+    ) -> Result<Vec<Block>>;
+
+    async fn get_last_block_id(&self) -> Result<BlockId>;
+
+    async fn get_account_balance(&self, account_id: AccountId) -> Result<u128>;
+
+    async fn get_transaction(&self, tx_hash: HashType)
+    -> Result<Option<(LeeTransaction, BlockId)>>;
+
+    async fn get_accounts_nonces(&self, account_ids: Vec<AccountId>) -> Result<Vec<Nonce>>;
+
+    async fn get_account_view(&self, actor_state_selector: Actor) -> Result<Option<Account>>;
+
+    async fn get_proofs_and_root(
+        &self,
+        commitments: Vec<Commitment>,
+        message_position: Option<CommitmentPosition>,
+    ) -> Result<(
+        Vec<Option<MembershipProof>>,
+        Option<MembershipProof>,
+        CommitmentSetDigest,
+    )>;
+
+    async fn get_account(&self, account_id: AccountId) -> Result<Option<Account>>;
+
+    async fn get_program_ids(&self) -> Result<BTreeMap<String, ProgramId>>;
+
+    async fn get_publications(
+        &self,
+        from_position: CommitmentPosition,
+        limit: PageLimit,
+    ) -> Result<Vec<(CommitmentPosition, Publication)>>;
+
+    async fn get_recovery_binding(&self, address: AccountId) -> Result<Option<EncryptedNote>>;
+
+    fn from_config(config: &WalletConfig) -> Result<Self>;
+}
+
+impl WalletSequencerClient for SequencerClient {
+    async fn send_transaction(&self, tx: LeeTransaction) -> Result<HashType> {
+        Ok(RpcClient::send_transaction(self, tx).await?)
+    }
+
+    async fn get_block(&self, block_id: BlockId) -> Result<Option<Block>> {
+        Ok(RpcClient::get_block(self, block_id).await?)
+    }
+
+    async fn get_block_range(
+        &self,
+        start_block_id: BlockId,
+        end_block_id: BlockId,
+    ) -> Result<Vec<Block>> {
+        Ok(RpcClient::get_block_range(self, start_block_id, end_block_id).await?)
+    }
+
+    async fn get_last_block_id(&self) -> Result<BlockId> {
+        Ok(RpcClient::get_last_block_id(self).await?)
+    }
+
+    async fn get_account_balance(&self, account_id: AccountId) -> Result<u128> {
+        Ok(RpcClient::get_account_balance(self, account_id).await?)
+    }
+
+    async fn get_transaction(
+        &self,
+        tx_hash: HashType,
+    ) -> Result<Option<(LeeTransaction, BlockId)>> {
+        Ok(RpcClient::get_transaction(self, tx_hash).await?)
+    }
+
+    async fn get_accounts_nonces(&self, account_ids: Vec<AccountId>) -> Result<Vec<Nonce>> {
+        Ok(RpcClient::get_accounts_nonces(self, account_ids).await?)
+    }
+
+    async fn get_account_view(&self, actor_state_selector: Actor) -> Result<Option<Account>> {
+        Ok(RpcClient::get_account_view(self, actor_state_selector).await?)
+    }
+
+    async fn get_proofs_and_root(
+        &self,
+        commitments: Vec<Commitment>,
+        message_position: Option<CommitmentPosition>,
+    ) -> Result<(
+        Vec<Option<MembershipProof>>,
+        Option<MembershipProof>,
+        CommitmentSetDigest,
+    )> {
+        Ok(RpcClient::get_proofs_and_root(self, commitments, message_position).await?)
+    }
+
+    async fn get_account(&self, account_id: AccountId) -> Result<Option<Account>> {
+        Ok(RpcClient::get_account(self, account_id).await?)
+    }
+
+    async fn get_program_ids(&self) -> Result<BTreeMap<String, ProgramId>> {
+        Ok(RpcClient::get_program_ids(self).await?)
+    }
+
+    async fn get_publications(
+        &self,
+        from_position: CommitmentPosition,
+        limit: PageLimit,
+    ) -> Result<Vec<(CommitmentPosition, Publication)>> {
+        Ok(RpcClient::get_publications(self, from_position, limit).await?)
+    }
+
+    async fn get_recovery_binding(&self, address: AccountId) -> Result<Option<EncryptedNote>> {
+        Ok(RpcClient::get_recovery_binding(self, address).await?)
+    }
+
+    fn from_config(config: &WalletConfig) -> Result<Self> {
+        let mut builder = SequencerClientBuilder::default();
+        if let Some(basic_auth) = &config.sequencer.basic_auth {
+            builder = builder.set_headers(
+                std::iter::once((
+                    "Authorization".parse().expect("Header name is valid"),
+                    format!("Basic {basic_auth}")
+                        .parse()
+                        .context("Invalid basic auth format")?,
+                ))
+                .collect(),
+            );
+        }
+        builder
+            .build(&config.sequencer.sequencer_addr)
+            .context("Failed to create sequencer client")
+    }
+}
+
+pub struct WalletCore<C: WalletSequencerClient> {
     config_path: PathBuf,
     config_overrides: Option<WalletConfigOverrides>,
     config: WalletConfig,
@@ -173,10 +312,10 @@ pub struct WalletCore {
     storage_key: Option<StorageKey>,
     spent_nullifiers: SpentNullifiers,
 
-    sequencer_client: SequencerClient,
+    sequencer_client: C,
 }
 
-impl WalletCore {
+impl<C: WalletSequencerClient> WalletCore<C> {
     /// Construct wallet using [`HOME_DIR_ENV_VAR`] env var for paths or user home dir if not set,
     /// reading the password with [`utils::read_password`].
     pub fn from_env() -> Result<Self> {
@@ -185,6 +324,21 @@ impl WalletCore {
         let password = utils::read_password(&storage_path)?;
 
         Self::new_update_chain(config_path, storage_path, None, &password)
+    }
+
+    /// Construct wallet using [`HOME_DIR_ENV_VAR`] env var for paths or user home dir if not set.
+    pub fn from_env_with_client(sequencer_client: C) -> Result<Self> {
+        let config_path = utils::fetch_config_path()?;
+        let storage_path = utils::fetch_persistent_storage_path()?;
+        let password = utils::read_password(&storage_path)?;
+
+        Self::new_update_chain_with_client(
+            config_path,
+            storage_path,
+            None,
+            &password,
+            sequencer_client,
+        )
     }
 
     /// Opens the wallet whose storage is encrypted under `password`, or unencrypted for an empty
@@ -204,6 +358,26 @@ impl WalletCore {
             config_overrides,
             storage,
             storage_key,
+        )
+    }
+
+    pub fn new_update_chain_with_client(
+        config_path: PathBuf,
+        storage_path: PathBuf,
+        config_overrides: Option<WalletConfigOverrides>,
+        password: &str,
+        sequencer_client: C,
+    ) -> Result<Self> {
+        let (storage, storage_key) = Storage::from_path(&storage_path, password)
+            .with_context(|| format!("Failed to load storage from {}", storage_path.display()))?;
+
+        Self::new_with_client(
+            config_path,
+            storage_path,
+            config_overrides,
+            storage,
+            storage_key,
+            sequencer_client,
         )
     }
 
@@ -228,6 +402,27 @@ impl WalletCore {
         Ok((wallet, mnemonic))
     }
 
+    pub fn new_init_storage_with_client(
+        config_path: PathBuf,
+        storage_path: PathBuf,
+        config_overrides: Option<WalletConfigOverrides>,
+        password: &str,
+        sequencer_client: C,
+    ) -> Result<(Self, Mnemonic)> {
+        let (storage, mnemonic) = Storage::new();
+        let storage_key = storage::storage_key_for(password)?;
+        let wallet = Self::new_with_client(
+            config_path,
+            storage_path,
+            config_overrides,
+            storage,
+            storage_key,
+            sequencer_client,
+        )?;
+
+        Ok((wallet, mnemonic))
+    }
+
     fn new(
         config_path: PathBuf,
         storage_path: PathBuf,
@@ -246,23 +441,41 @@ impl WalletCore {
             config.apply_overrides(config_overrides);
         }
 
+        let sequencer_client = C::from_config(&config)?;
         let spent_nullifiers = SpentNullifiers::open(storage_path.with_extension("nullifiers"))?;
 
-        let mut builder = SequencerClientBuilder::default();
-        if let Some(basic_auth) = &config.sequencer.basic_auth {
-            builder = builder.set_headers(
-                std::iter::once((
-                    "Authorization".parse().expect("Header name is valid"),
-                    format!("Basic {basic_auth}")
-                        .parse()
-                        .context("Invalid basic auth format")?,
-                ))
-                .collect(),
-            );
+        Ok(Self {
+            config_path,
+            config_overrides,
+            config,
+            storage,
+            storage_path,
+            storage_key,
+            spent_nullifiers,
+            sequencer_client,
+        })
+    }
+
+    fn new_with_client(
+        config_path: PathBuf,
+        storage_path: PathBuf,
+        config_overrides: Option<WalletConfigOverrides>,
+        storage: Storage,
+        storage_key: Option<StorageKey>,
+        sequencer_client: C,
+    ) -> Result<Self> {
+        let mut config =
+            WalletConfig::from_path_or_initialize_default(&config_path).with_context(|| {
+                format!(
+                    "Failed to deserialize wallet config at {}",
+                    config_path.display()
+                )
+            })?;
+        if let Some(config_overrides) = config_overrides.clone() {
+            config.apply_overrides(config_overrides);
         }
-        let sequencer_client = builder
-            .build(&config.sequencer.sequencer_addr)
-            .context("Failed to create sequencer client")?;
+
+        let spent_nullifiers = SpentNullifiers::open(storage_path.with_extension("nullifiers"))?;
 
         Ok(Self {
             config_path,
@@ -287,17 +500,17 @@ impl WalletCore {
     }
 
     #[must_use]
-    pub fn poller(&self) -> TxPoller {
+    pub fn poller(&self) -> TxPoller<C> {
         TxPoller::new(self.config(), self.client_owned())
     }
 
     #[must_use]
-    pub const fn client(&self) -> &SequencerClient {
+    pub const fn client(&self) -> &C {
         &self.sequencer_client
     }
 
     #[must_use]
-    pub fn client_owned(&self) -> SequencerClient {
+    pub fn client_owned(&self) -> C {
         self.sequencer_client.clone()
     }
 
@@ -592,15 +805,14 @@ impl WalletCore {
 
     /// Get account balance.
     pub async fn get_account_balance(&self, acc: AccountId) -> Result<u128> {
-        Ok(self.sequencer_client.get_account_balance(acc).await?)
+        self.sequencer_client.get_account_balance(acc).await
     }
 
     /// Get accounts nonces.
     pub async fn get_accounts_nonces(&self, accs: &[AccountId]) -> Result<Vec<Nonce>> {
-        Ok(self
-            .sequencer_client
+        self.sequencer_client
             .get_accounts_nonces(accs.to_vec())
-            .await?)
+            .await
     }
 
     /// Returns the account's nonce and the selected actor state; its balance is the actor state at
@@ -625,10 +837,9 @@ impl WalletCore {
         from_position: CommitmentPosition,
         limit: PageLimit,
     ) -> Result<Vec<(CommitmentPosition, Publication)>> {
-        Ok(self
-            .sequencer_client
+        self.sequencer_client
             .get_publications(from_position, limit)
-            .await?)
+            .await
     }
 
     // Messages that one of this wallet's key pairs opens: a private address's recovery note, or a
@@ -733,27 +944,27 @@ impl WalletCore {
     }
 
     pub async fn get_last_block_id(&self) -> Result<u64> {
-        Ok(self.sequencer_client.get_last_block_id().await?)
+        self.sequencer_client.get_last_block_id().await
     }
 
     pub async fn get_block(&self, block_id: u64) -> Result<Option<Block>> {
-        Ok(self.sequencer_client.get_block(block_id).await?)
+        self.sequencer_client.get_block(block_id).await
     }
 
     pub async fn get_transaction(
         &self,
         hash: HashType,
     ) -> Result<Option<(LeeTransaction, BlockId)>> {
-        Ok(self.sequencer_client.get_transaction(hash).await?)
+        self.sequencer_client.get_transaction(hash).await
     }
 
     /// Get public account.
     pub async fn get_account_public(&self, account_id: AccountId) -> Result<Option<Account>> {
-        Ok(self.sequencer_client.get_account(account_id).await?)
+        self.sequencer_client.get_account(account_id).await
     }
 
     pub async fn get_recovery_binding(&self, address: AccountId) -> Result<Option<EncryptedNote>> {
-        Ok(self.sequencer_client.get_recovery_binding(address).await?)
+        self.sequencer_client.get_recovery_binding(address).await
     }
 
     #[must_use]
@@ -790,7 +1001,7 @@ impl WalletCore {
     }
 
     pub async fn get_program_ids(&self) -> Result<BTreeMap<String, ProgramId>> {
-        Ok(self.sequencer_client.get_program_ids().await?)
+        self.sequencer_client.get_program_ids().await
     }
 
     /// Poll transactions.
@@ -807,10 +1018,9 @@ impl WalletCore {
         Option<MembershipProof>,
         CommitmentSetDigest,
     )> {
-        Ok(self
-            .sequencer_client
+        self.sequencer_client
             .get_proofs_and_root(commitments.to_vec(), message_position)
-            .await?)
+            .await
     }
 
     pub(crate) async fn await_inclusion(
@@ -1214,7 +1424,10 @@ impl WalletCore {
             .send_transaction(LeeTransaction::PrivacyPreserving(tx))
             .await;
 
-        Ok((call_res?, shared_secrets))
+        Ok((
+            call_res.map_err(ExecutionFailureKind::SequencerError)?,
+            shared_secrets,
+        ))
     }
 
     pub async fn send_pub_tx(
@@ -1353,10 +1566,10 @@ impl WalletCore {
 
         let tx = lee::public_transaction::PublicTransaction::new(message, witness_set);
 
-        Ok(self
-            .sequencer_client
+        self.sequencer_client
             .send_transaction(LeeTransaction::Public(tx))
-            .await?)
+            .await
+            .map_err(ExecutionFailureKind::SequencerError)
     }
 
     pub async fn receive_pending_message(
@@ -1732,6 +1945,7 @@ mod tests {
         },
     };
     use program_loader_core::MAX_SEGMENT_DATA_LEN;
+    use sequencer_service_rpc::SequencerClient;
     use sequencer_stake_core::{SequencerKey, StakeRecord, ed25519_dalek::SigningKey};
     use test_guest_core::Script;
 
@@ -1777,7 +1991,7 @@ mod tests {
     // A wallet in a fresh home whose one sequencer serves `sequencer`.
     async fn served_wallet<Context: Send + Sync + 'static>(
         sequencer: RpcModule<Context>,
-    ) -> (WalletCore, tempfile::TempDir, ServerHandle) {
+    ) -> (WalletCore<SequencerClient>, tempfile::TempDir, ServerHandle) {
         let server = Server::builder().build("127.0.0.1:0").await.unwrap();
         let address = server.local_addr().unwrap();
         let handle = server.start(sequencer);
@@ -1810,7 +2024,12 @@ mod tests {
         let (mut wallet, _home, _sequencer) = served_wallet(RpcModule::new(())).await;
         let (config_path, storage_path) = (wallet.config_path.clone(), wallet.storage_path.clone());
         let reopen = |password: &str| {
-            WalletCore::new_update_chain(config_path.clone(), storage_path.clone(), None, password)
+            WalletCore::<SequencerClient>::new_update_chain(
+                config_path.clone(),
+                storage_path.clone(),
+                None,
+                password,
+            )
         };
 
         wallet.set_password("new password").unwrap();
@@ -1827,9 +2046,14 @@ mod tests {
         let (mut wallet, _home, _sequencer) = served_wallet(RpcModule::new(())).await;
         let (config_path, storage_path) = (wallet.config_path.clone(), wallet.storage_path.clone());
         let reopen = |password: &str| {
-            WalletCore::new_update_chain(config_path.clone(), storage_path.clone(), None, password)
-                .err()
-                .unwrap()
+            WalletCore::<SequencerClient>::new_update_chain(
+                config_path.clone(),
+                storage_path.clone(),
+                None,
+                password,
+            )
+            .err()
+            .unwrap()
         };
         wallet.store_persistent_data().unwrap();
 
@@ -2201,7 +2425,7 @@ mod tests {
     }
 
     async fn wallet_with_a_received_message() -> (
-        WalletCore,
+        WalletCore<SequencerClient>,
         tempfile::TempDir,
         ServerHandle,
         Arc<Mutex<Served>>,
@@ -2352,7 +2576,7 @@ mod tests {
     // knows its own account at a newer state than that account's note, and holds a label and an
     // imported key.
     async fn wallet_past_an_undiscovered_pda() -> (
-        WalletCore,
+        WalletCore<SequencerClient>,
         tempfile::TempDir,
         ServerHandle,
         Arc<Mutex<Served>>,
@@ -2510,7 +2734,7 @@ mod tests {
 
         // Block 1's record and the start of block 2's.
         std::fs::write(&cache_path, &synced[..6]).unwrap();
-        let mut restarted = WalletCore::new_update_chain(
+        let mut restarted = WalletCore::<SequencerClient>::new_update_chain(
             wallet.config_path.clone(),
             wallet.storage_path.clone(),
             None,
