@@ -346,7 +346,7 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
         reason = "Slop has won the battle, but our war is not over"
     )]
     pub async fn start_from_config(
-        config: SequencerConfig,
+        mut config: SequencerConfig,
         storage_ref: ActorRef<S>,
         bedrock_ref: ActorRef<B>,
     ) -> Result<(Self, MemPoolHandle<(TransactionOrigin, LeeTransaction)>)> {
@@ -400,6 +400,9 @@ impl<S: StorageActorTrait, B: BedrockActorTrait> SequencerCore<S, B> {
         }
         if channel_already_exists {
             info!("Channel already exists; joining as a non channel creator");
+            // The channel's own genesis is replayed instead, so a creator restarting (or a second
+            // one) cannot diverge from it.
+            config.genesis = None;
         } else {
             ensure!(
                 config.genesis.is_some(),
