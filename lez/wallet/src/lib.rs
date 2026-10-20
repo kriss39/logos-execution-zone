@@ -359,7 +359,7 @@ impl WalletCore {
                 )
             })?;
 
-        println!(
+        log::info!(
             "Stored persistent accounts at {}",
             self.storage_path.display()
         );
