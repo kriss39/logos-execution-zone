@@ -24,6 +24,7 @@ ignore = [
   { id = "RUSTSEC-2026-0367", reason = "`zip` 2.4.2 reached only through `risc0-circuit-recursion`, which reads its embedded archive in memory and never calls the vulnerable `extract`" },
   { id = "RUSTSEC-2026-0368", reason = "`zip` 2.4.2 reached only through `risc0-circuit-recursion`, which reads its embedded archive in memory and never calls the vulnerable `extract`" },
   { id = "RUSTSEC-2026-0369", reason = "`zip` 2.4.2 reached only through `risc0-circuit-recursion`, which reads its embedded archive in memory and never calls the vulnerable `extract`" },
+  { id = "RUSTSEC-2026-0383", reason = "`webpki-root-certs` 0.26.11 is pulled transitively by `rustls-platform-verifier` 0.5 under `jsonrpsee` 0.26; 0.26.11 is a semver-trick shim that only re-exports `webpki-root-certs` 1.0.10, which carries the fix, and no patched 0.26 release exists" },
 ]
 yanked = "deny"
 unused-ignored-advisory = "deny"
