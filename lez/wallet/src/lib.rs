@@ -165,122 +165,152 @@ struct Receipt {
 
 #[expect(async_fn_in_trait, reason = "For internal usage only")]
 pub trait WalletSequencerClient: Clone {
-    async fn send_transaction(&self, tx: LeeTransaction) -> Result<HashType>;
+    type Error: std::error::Error + Into<ExecutionFailureKind> + Send + Sync + 'static;
 
-    async fn get_block(&self, block_id: BlockId) -> Result<Option<Block>>;
+    async fn send_transaction(&self, tx: LeeTransaction) -> Result<HashType, Self::Error>;
+
+    async fn get_block(&self, block_id: BlockId) -> Result<Option<Block>, Self::Error>;
 
     async fn get_block_range(
         &self,
         start_block_id: BlockId,
         end_block_id: BlockId,
-    ) -> Result<Vec<Block>>;
+    ) -> Result<Vec<Block>, Self::Error>;
 
-    async fn get_last_block_id(&self) -> Result<BlockId>;
+    async fn get_last_block_id(&self) -> Result<BlockId, Self::Error>;
 
-    async fn get_account_balance(&self, account_id: AccountId) -> Result<u128>;
+    async fn get_account_balance(&self, account_id: AccountId) -> Result<u128, Self::Error>;
 
-    async fn get_transaction(&self, tx_hash: HashType)
-    -> Result<Option<(LeeTransaction, BlockId)>>;
+    async fn get_transaction(
+        &self,
+        tx_hash: HashType,
+    ) -> Result<Option<(LeeTransaction, BlockId)>, Self::Error>;
 
-    async fn get_accounts_nonces(&self, account_ids: Vec<AccountId>) -> Result<Vec<Nonce>>;
+    async fn get_accounts_nonces(
+        &self,
+        account_ids: Vec<AccountId>,
+    ) -> Result<Vec<Nonce>, Self::Error>;
 
-    async fn get_account_view(&self, actor_state_selector: Actor) -> Result<Option<Account>>;
+    async fn get_account_view(
+        &self,
+        actor_state_selector: Actor,
+    ) -> Result<Option<Account>, Self::Error>;
 
     async fn get_proofs_and_root(
         &self,
         commitments: Vec<Commitment>,
         message_position: Option<CommitmentPosition>,
-    ) -> Result<(
-        Vec<Option<MembershipProof>>,
-        Option<MembershipProof>,
-        CommitmentSetDigest,
-    )>;
+    ) -> Result<
+        (
+            Vec<Option<MembershipProof>>,
+            Option<MembershipProof>,
+            CommitmentSetDigest,
+        ),
+        Self::Error,
+    >;
 
-    async fn get_account(&self, account_id: AccountId) -> Result<Option<Account>>;
+    async fn get_account(&self, account_id: AccountId) -> Result<Option<Account>, Self::Error>;
 
-    async fn get_program_ids(&self) -> Result<BTreeMap<String, ProgramId>>;
+    async fn get_program_ids(&self) -> Result<BTreeMap<String, ProgramId>, Self::Error>;
 
     async fn get_publications(
         &self,
         from_position: CommitmentPosition,
         limit: PageLimit,
-    ) -> Result<Vec<(CommitmentPosition, Publication)>>;
+    ) -> Result<Vec<(CommitmentPosition, Publication)>, Self::Error>;
 
-    async fn get_recovery_binding(&self, address: AccountId) -> Result<Option<EncryptedNote>>;
+    async fn get_recovery_binding(
+        &self,
+        address: AccountId,
+    ) -> Result<Option<EncryptedNote>, Self::Error>;
 
     fn from_config(config: &WalletConfig) -> Result<Self>;
 }
 
 impl WalletSequencerClient for SequencerClient {
-    async fn send_transaction(&self, tx: LeeTransaction) -> Result<HashType> {
-        Ok(RpcClient::send_transaction(self, tx).await?)
+    type Error = sequencer_service_rpc::ClientError;
+
+    async fn send_transaction(&self, tx: LeeTransaction) -> Result<HashType, Self::Error> {
+        RpcClient::send_transaction(self, tx).await
     }
 
-    async fn get_block(&self, block_id: BlockId) -> Result<Option<Block>> {
-        Ok(RpcClient::get_block(self, block_id).await?)
+    async fn get_block(&self, block_id: BlockId) -> Result<Option<Block>, Self::Error> {
+        RpcClient::get_block(self, block_id).await
     }
 
     async fn get_block_range(
         &self,
         start_block_id: BlockId,
         end_block_id: BlockId,
-    ) -> Result<Vec<Block>> {
-        Ok(RpcClient::get_block_range(self, start_block_id, end_block_id).await?)
+    ) -> Result<Vec<Block>, Self::Error> {
+        RpcClient::get_block_range(self, start_block_id, end_block_id).await
     }
 
-    async fn get_last_block_id(&self) -> Result<BlockId> {
-        Ok(RpcClient::get_last_block_id(self).await?)
+    async fn get_last_block_id(&self) -> Result<BlockId, Self::Error> {
+        RpcClient::get_last_block_id(self).await
     }
 
-    async fn get_account_balance(&self, account_id: AccountId) -> Result<u128> {
-        Ok(RpcClient::get_account_balance(self, account_id).await?)
+    async fn get_account_balance(&self, account_id: AccountId) -> Result<u128, Self::Error> {
+        RpcClient::get_account_balance(self, account_id).await
     }
 
     async fn get_transaction(
         &self,
         tx_hash: HashType,
-    ) -> Result<Option<(LeeTransaction, BlockId)>> {
-        Ok(RpcClient::get_transaction(self, tx_hash).await?)
+    ) -> Result<Option<(LeeTransaction, BlockId)>, Self::Error> {
+        RpcClient::get_transaction(self, tx_hash).await
     }
 
-    async fn get_accounts_nonces(&self, account_ids: Vec<AccountId>) -> Result<Vec<Nonce>> {
-        Ok(RpcClient::get_accounts_nonces(self, account_ids).await?)
+    async fn get_accounts_nonces(
+        &self,
+        account_ids: Vec<AccountId>,
+    ) -> Result<Vec<Nonce>, Self::Error> {
+        RpcClient::get_accounts_nonces(self, account_ids).await
     }
 
-    async fn get_account_view(&self, actor_state_selector: Actor) -> Result<Option<Account>> {
-        Ok(RpcClient::get_account_view(self, actor_state_selector).await?)
+    async fn get_account_view(
+        &self,
+        actor_state_selector: Actor,
+    ) -> Result<Option<Account>, Self::Error> {
+        RpcClient::get_account_view(self, actor_state_selector).await
     }
 
     async fn get_proofs_and_root(
         &self,
         commitments: Vec<Commitment>,
         message_position: Option<CommitmentPosition>,
-    ) -> Result<(
-        Vec<Option<MembershipProof>>,
-        Option<MembershipProof>,
-        CommitmentSetDigest,
-    )> {
-        Ok(RpcClient::get_proofs_and_root(self, commitments, message_position).await?)
+    ) -> Result<
+        (
+            Vec<Option<MembershipProof>>,
+            Option<MembershipProof>,
+            CommitmentSetDigest,
+        ),
+        Self::Error,
+    > {
+        RpcClient::get_proofs_and_root(self, commitments, message_position).await
     }
 
-    async fn get_account(&self, account_id: AccountId) -> Result<Option<Account>> {
-        Ok(RpcClient::get_account(self, account_id).await?)
+    async fn get_account(&self, account_id: AccountId) -> Result<Option<Account>, Self::Error> {
+        RpcClient::get_account(self, account_id).await
     }
 
-    async fn get_program_ids(&self) -> Result<BTreeMap<String, ProgramId>> {
-        Ok(RpcClient::get_program_ids(self).await?)
+    async fn get_program_ids(&self) -> Result<BTreeMap<String, ProgramId>, Self::Error> {
+        RpcClient::get_program_ids(self).await
     }
 
     async fn get_publications(
         &self,
         from_position: CommitmentPosition,
         limit: PageLimit,
-    ) -> Result<Vec<(CommitmentPosition, Publication)>> {
-        Ok(RpcClient::get_publications(self, from_position, limit).await?)
+    ) -> Result<Vec<(CommitmentPosition, Publication)>, Self::Error> {
+        RpcClient::get_publications(self, from_position, limit).await
     }
 
-    async fn get_recovery_binding(&self, address: AccountId) -> Result<Option<EncryptedNote>> {
-        Ok(RpcClient::get_recovery_binding(self, address).await?)
+    async fn get_recovery_binding(
+        &self,
+        address: AccountId,
+    ) -> Result<Option<EncryptedNote>, Self::Error> {
+        RpcClient::get_recovery_binding(self, address).await
     }
 
     fn from_config(config: &WalletConfig) -> Result<Self> {
@@ -805,14 +835,15 @@ impl<C: WalletSequencerClient> WalletCore<C> {
 
     /// Get account balance.
     pub async fn get_account_balance(&self, acc: AccountId) -> Result<u128> {
-        self.sequencer_client.get_account_balance(acc).await
+        Ok(self.sequencer_client.get_account_balance(acc).await?)
     }
 
     /// Get accounts nonces.
     pub async fn get_accounts_nonces(&self, accs: &[AccountId]) -> Result<Vec<Nonce>> {
-        self.sequencer_client
+        Ok(self
+            .sequencer_client
             .get_accounts_nonces(accs.to_vec())
-            .await
+            .await?)
     }
 
     /// Returns the account's nonce and the selected actor state; its balance is the actor state at
@@ -837,9 +868,10 @@ impl<C: WalletSequencerClient> WalletCore<C> {
         from_position: CommitmentPosition,
         limit: PageLimit,
     ) -> Result<Vec<(CommitmentPosition, Publication)>> {
-        self.sequencer_client
+        Ok(self
+            .sequencer_client
             .get_publications(from_position, limit)
-            .await
+            .await?)
     }
 
     // Messages that one of this wallet's key pairs opens: a private address's recovery note, or a
@@ -944,27 +976,27 @@ impl<C: WalletSequencerClient> WalletCore<C> {
     }
 
     pub async fn get_last_block_id(&self) -> Result<u64> {
-        self.sequencer_client.get_last_block_id().await
+        Ok(self.sequencer_client.get_last_block_id().await?)
     }
 
     pub async fn get_block(&self, block_id: u64) -> Result<Option<Block>> {
-        self.sequencer_client.get_block(block_id).await
+        Ok(self.sequencer_client.get_block(block_id).await?)
     }
 
     pub async fn get_transaction(
         &self,
         hash: HashType,
     ) -> Result<Option<(LeeTransaction, BlockId)>> {
-        self.sequencer_client.get_transaction(hash).await
+        Ok(self.sequencer_client.get_transaction(hash).await?)
     }
 
     /// Get public account.
     pub async fn get_account_public(&self, account_id: AccountId) -> Result<Option<Account>> {
-        self.sequencer_client.get_account(account_id).await
+        Ok(self.sequencer_client.get_account(account_id).await?)
     }
 
     pub async fn get_recovery_binding(&self, address: AccountId) -> Result<Option<EncryptedNote>> {
-        self.sequencer_client.get_recovery_binding(address).await
+        Ok(self.sequencer_client.get_recovery_binding(address).await?)
     }
 
     #[must_use]
@@ -1001,7 +1033,7 @@ impl<C: WalletSequencerClient> WalletCore<C> {
     }
 
     pub async fn get_program_ids(&self) -> Result<BTreeMap<String, ProgramId>> {
-        self.sequencer_client.get_program_ids().await
+        Ok(self.sequencer_client.get_program_ids().await?)
     }
 
     /// Poll transactions.
@@ -1018,9 +1050,10 @@ impl<C: WalletSequencerClient> WalletCore<C> {
         Option<MembershipProof>,
         CommitmentSetDigest,
     )> {
-        self.sequencer_client
+        Ok(self
+            .sequencer_client
             .get_proofs_and_root(commitments.to_vec(), message_position)
-            .await
+            .await?)
     }
 
     pub(crate) async fn await_inclusion(
@@ -1424,10 +1457,7 @@ impl<C: WalletSequencerClient> WalletCore<C> {
             .send_transaction(LeeTransaction::PrivacyPreserving(tx))
             .await;
 
-        Ok((
-            call_res.map_err(ExecutionFailureKind::SequencerError)?,
-            shared_secrets,
-        ))
+        Ok((call_res.map_err(Into::into)?, shared_secrets))
     }
 
     pub async fn send_pub_tx(
@@ -1569,7 +1599,7 @@ impl<C: WalletSequencerClient> WalletCore<C> {
         self.sequencer_client
             .send_transaction(LeeTransaction::Public(tx))
             .await
-            .map_err(ExecutionFailureKind::SequencerError)
+            .map_err(Into::into)
     }
 
     pub async fn receive_pending_message(
@@ -1764,7 +1794,7 @@ impl<C: WalletSequencerClient> WalletCore<C> {
                     leader_client
                         .get_account(account_id)
                         .map_ok(Option::unwrap_or_default)
-                        .map_err(Into::into)
+                        .map_err(anyhow::Error::from)
                 },
                 &awaited,
             )

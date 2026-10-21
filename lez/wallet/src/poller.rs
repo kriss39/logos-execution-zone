@@ -73,7 +73,7 @@ impl<C: WalletSequencerClient> TxPoller<C> {
             loop {
                 let chunk_end = std::cmp::min(chunk_start.saturating_add(self.block_poll_max_amount).saturating_sub(1), *range.end());
 
-                let blocks = self.client.get_block_range(chunk_start, chunk_end).await?;
+                let blocks = self.client.get_block_range(chunk_start, chunk_end).await.map_err(anyhow::Error::from)?;
                 for block in blocks {
                     yield Ok(block);
                 }
