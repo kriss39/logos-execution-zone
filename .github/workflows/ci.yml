@@ -267,7 +267,7 @@ jobs:
       - name: Pin host toolchain
         uses: ./.github/actions/pin-host-toolchain
       - name: Download resolved Bedrock node
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: bedrock-node
           path: bedrock/.resolved
@@ -335,7 +335,7 @@ jobs:
         uses: ./.github/actions/run-in-ci-image
         with:
           image: ${{ needs.ci-image.outputs.image }}
-          env: RISC0_DEV_MODE=1
+          env: RISC0_DEV_MODE=1 CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_TEST_DEBUG=line-tables-only
           # Listed from the build just archived: unpacking the archive again
           # overflows the runner's disk.
           run: |
@@ -389,14 +389,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download integration test archive
-        timeout-minutes: 10
-        uses: actions/download-artifact@v4
+        timeout-minutes: 20
+        uses: actions/download-artifact@v5
         with:
           name: integration-tests-archive
 
       - name: Download resolved Bedrock node
-        timeout-minutes: 10
-        uses: actions/download-artifact@v4
+        timeout-minutes: 20
+        uses: actions/download-artifact@v5
         with:
           name: bedrock-node
           path: bedrock/.resolved
