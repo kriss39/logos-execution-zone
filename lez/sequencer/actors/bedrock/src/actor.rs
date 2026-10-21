@@ -457,9 +457,10 @@ impl Message<PublishBlock> for BedrockActor {
         }
 
         let data = borsh::to_vec(&block).map_err(Error::BlockEncodingFailed)?;
+        let data_byte_size = data.len();
         let inscription: Inscription = data.try_into().map_err(|_err| Error::BlockTooLarge)?;
 
-        if let Some(parent) = parent {
+        let published = if let Some(parent) = parent {
             if !withdrawals.is_empty() {
                 return Err(Error::CannotPublishBlockOnParentWithWithdrawals);
             }
@@ -516,7 +517,11 @@ impl Message<PublishBlock> for BedrockActor {
                 seq: self.next_seq(),
                 released_notes: released_notes(&result.tx),
             })
+        };
+        if published.is_ok() {
+            info!("Published block with the size of {data_byte_size} bytes");
         }
+        published
     }
 }
 
