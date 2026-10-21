@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use common::block::Block;
-use futures::StreamExt as _;
+use futures::{StreamExt as _, future::Either};
 use kameo::{
     Actor,
     actor::{ActorRef, WeakActorRef},
@@ -44,12 +44,12 @@ use crate::{
     actor::config::Config,
     error::Error,
     protocol::{
-        AccreditedKeys, BoxStream, ChangeChannelConfig, ChannelEntry, ChannelEvent, ChannelId,
-        ChannelParams, ChannelSeq, ChannelUpdate, CheckChannelExists, CheckIsOurTurn,
+        AccreditedKeys, ChangeChannelConfig, ChannelEntry, ChannelEvent, ChannelId, ChannelParams,
+        ChannelReadStream, ChannelSeq, ChannelUpdate, CheckChannelExists, CheckIsOurTurn,
         CreateChannel, Ed25519PublicKey, GetAccreditedKeys, GetChannelId, GetChannelIdReply,
         GetChannelTipMessageId, GetChannelTipSlot, LiveChannelConfig, MsgId, PrepareConfig,
         PreparedChannelConfig, PublishBlock, PublishOutcome, ReadChannel, Slot, ViewChange,
-        ZoneMessage, verified_keys,
+        verified_keys,
     },
 };
 
@@ -670,7 +670,7 @@ impl Message<GetChannelTipMessageId> for BedrockActor {
 }
 
 impl Message<ReadChannel> for BedrockActor {
-    type Reply = Result<BoxStream<(ZoneMessage, Slot)>>;
+    type Reply = Result<ChannelReadStream>;
 
     async fn handle(
         &mut self,
@@ -693,9 +693,10 @@ impl Message<ReadChannel> for BedrockActor {
 
         let node = self.node.clone();
         let channel_id = self.config.channel_id;
-        let stream = futures::stream::unfold(start_slot, move |current_slot| {
+        let stream = futures::stream::unfold(Some(start_slot), move |next| {
             let node = node.clone();
             async move {
+                let current_slot = next?;
                 if current_slot > lib_slot {
                     return None;
                 }
@@ -713,13 +714,20 @@ impl Message<ReadChannel> for BedrockActor {
                     .zone_messages_in_blocks(current_slot, end_slot, channel_id)
                     .await
                 {
-                    Ok(messages) => Some((messages, end_slot.strict_add(1.into()))),
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to fetch zone messages from blocks {current_slot:?}..={end_slot:?}: {e}",
-                        );
-                        None
-                    }
+                    Ok(messages) => Some((
+                        Either::Left(messages.map(Ok)),
+                        Some(end_slot.strict_add(1.into())),
+                    )),
+                    Err(cause) => Some((
+                        Either::Right(futures::stream::once(std::future::ready(Err(
+                            Error::ChannelReadFailed {
+                                from: current_slot,
+                                to: end_slot,
+                                cause: cause.into(),
+                            },
+                        )))),
+                        None,
+                    )),
                 }
             }
         })
