@@ -68,7 +68,7 @@ The name hides the account from observers and from public actors. It does not hi
 
 ## 9. Async message for strangers
 
-Send value and notifications to other people with an AsyncMessage, never an SyncMessage. The same code then serves public recipients (delivered at once) and private ones (stored).
+Send value and notifications to other people with an AsyncMessage, never a SyncMessage. The same code then serves public recipients (delivered at once) and private ones (stored).
 
 ## 10. Accept by collecting
 
@@ -90,7 +90,7 @@ Use it for games, disputes, and any protocol with a "your move" step.
 
 ## 13. Seed-authorized custody
 
-Funds live in the balance actor of a PDA. Only the program can move them, by granting the seed on an SyncMessage. Derive the seed from the instance's identity so instances cannot spend each other's funds. If the seed is supplied by a caller and stored, check on that first write that it derives the actor's own account. A stored seed that does not is a permanent lock on the funds.
+Funds live in the balance actor of a PDA. Only the program can move them, by granting the seed on a SyncMessage. Derive the seed from the instance's identity so instances cannot spend each other's funds. If the seed is supplied by a caller and stored, check on that first write that it derives the actor's own account. A stored seed that does not is a permanent lock on the funds.
 
 ## 14. The receipt actor
 
@@ -124,7 +124,7 @@ A payment that should trigger something at the destination carries a small instr
 
 - **Trusting `is_authorized` alone** for an operation only the owner should start.
 - **Collecting with the spending key by default.**
-- **An SyncMessage to a stranger's private actor.** It fails. Use an AsyncMessage.
+- **A SyncMessage to a stranger's private actor.** It fails. Use an AsyncMessage.
 - **A reply with fast-changing data to a private actor.** The proof goes stale in one block.
 - **One enum for everything a program sends and receives.** It forces handlers for messages that should never arrive.
 - **A receiving handler that can refuse value.** The value is stranded.

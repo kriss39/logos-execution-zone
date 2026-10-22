@@ -33,7 +33,7 @@ Then the sequencer, set up once and started thereafter:
 ```bash
 cargo run -p sequencer_service -- setup lez/sequencer/service/sequencer_home \
   --config lez/sequencer/service/configs/debug/sequencer_config.json \
-  --funding-public-key <the local node's funded key> \
+  --funding-public-key 2e03b2eff5a45478e7e79668d2a146cf2c5c7925bce927f2b1c67f2ab4fc0d26 \
   --create-channel
 
 RUST_LOG=info cargo run -p sequencer_service -- start lez/sequencer/service/sequencer_home

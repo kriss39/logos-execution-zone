@@ -72,7 +72,7 @@ fn handle_message(input: &ReceiveInput, message: Message) -> Response {
                 .timestamp_window(..election.deadline)
         }
 
-        Message::Open { voters, deadline } => /* store the deadline; async message `Ballot` to each voter */,
+        Message::Open { voters, deadline } => /* store the deadline; send `Ballot` to each voter as an async message */,
     }
 }
 ```

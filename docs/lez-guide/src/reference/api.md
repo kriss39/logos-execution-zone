@@ -91,7 +91,7 @@ Message::Transfer { to, amount }        // needs is_authorized; sends Credit asy
 Message::Credit(amount)                 // only from the native token program
 Message::ReadState                      // replies to the sender with StateReply
 
-native_token::custody_transfer(from_pda, seed, to, amount)   // an SyncMessage with the seed attached
+native_token::custody_transfer(from_pda, seed, to, amount)   // a SyncMessage with the seed attached
 ```
 
 ## Clock
@@ -106,17 +106,17 @@ Response::keep_state().send_sync(clock, &Message::AssertTimestamp { at_least, at
 
 ## Errors you can trigger
 
-These come from the engine (`ExecutionError`, `lee/state_machine/core/src/execution_state.rs`) and fail the transaction.
+These fail the transaction. All but the last come from the engine (`ExecutionError`, `lee/state_machine/core/src/execution_state.rs`).
 
 | Error | Cause |
 |---|---|
-| `UndeclaredActor` | an SyncMessage to an actor the transaction did not declare and cannot run |
+| `UndeclaredActor` | a SyncMessage to an actor the transaction did not declare and cannot run |
 | `UnadmittedPublicActor` | a message to a public account that does not exist and came with no evidence |
-| `UnboundAsyncDestination` | an AsyncMessage **from a public actor** to an address with no recovery binding, which includes any undeclared public account |
 | `TransitionInputMismatch` | a handler's proof was made for a different input |
 | `BoundaryMismatch`, `CrossMessageMismatch` | the public side did not do what the proof assumed |
 | `LoaderOutsidePublicExecution` | a message to the program loader inside a private transaction |
 | `EmptyValidityWindowIntersection` | two handlers' validity windows do not overlap |
+| `UnboundAsyncDestination` | an AsyncMessage **from a public actor** to an address with no recovery binding, which includes any undeclared public account. Raised at settlement, so it is a `LeeError` (`lee/state_machine/src/error.rs`), not an `ExecutionError` |
 
 ## Testing
 

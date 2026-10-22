@@ -64,20 +64,20 @@ To refuse a message, the handler panics. A panic fails the whole transaction.
 
 ## SyncMessage
 
-An SyncMessage is a message delivered immediately, inside the same transaction.
+A SyncMessage is a message delivered immediately, inside the same transaction.
 
 - The receiver's handler runs before the transaction ends.
 - If it fails, everything fails, including the sender's state change.
-- An SyncMessage can carry PDA seeds, which authorize the receiver (see [Authorization](authorization.md)).
+- A SyncMessage can carry PDA seeds, which authorize the receiver (see [Authorization](authorization.md)).
 
-An SyncMessage does not return a value. The name suggests it does, and that is the most common misunderstanding of this model. If the sender needs an answer, the receiver sends a second message back, and the sender's handler runs again to receive it. See "Replies" below.
+A SyncMessage does not return a value. The name suggests it does, and that is the most common misunderstanding of this model. If the sender needs an answer, the receiver sends a second message back, and the sender's handler runs again to receive it. See "Replies" below.
 
-**Who can be reached by an SyncMessage:**
+**Who can be reached by a SyncMessage:**
 
 - any public actor the transaction declares;
 - a private actor whose owner is building this transaction.
 
-An SyncMessage to anyone else's private actor fails the transaction. Only the owner can run a private handler, and they are not here.
+A SyncMessage to anyone else's private actor fails the transaction. Only the owner can run a private handler, and they are not here.
 
 ## AsyncMessage
 
@@ -85,7 +85,7 @@ An AsyncMessage is a message that is allowed to wait.
 
 | Destination | What happens |
 |---|---|
-| a public actor the transaction declares | delivered in this transaction, like an SyncMessage |
+| a public actor the transaction declares | delivered in this transaction, like a SyncMessage |
 | one of the submitter's own private actors, when the submitter asks for it | delivered in this transaction |
 | any other address | **stored on chain** for its owner to collect later |
 
@@ -93,7 +93,7 @@ The third row is the new capability. The sender's transaction completes. The mes
 
 Two rules for stored messages:
 
-- **A public sender needs a registered address.** A stored message from a public actor is published in the clear with a recovery note that lets the owner recognise it. The note comes from a recovery binding that must already be on chain for that address, or the transaction fails. A private sender does not need one: it seals the message to the recipient's keys. See [Private accounts](private-accounts.md).
+- **A public sender needs a registered address.** A stored message from a public actor is published in the clear with a recovery note that lets the owner recognise it. The note comes from a recovery binding, and a plain public transaction cannot carry one: `PublicExecution` is a root call and a fee, with nowhere to put it. A binding introduced alongside the message does count, but only a privacy-preserving transaction can introduce one. That is why a wallet sending to a key pair it has not sent to before escalates to the proven path and pays for a proof, rather than failing. A private sender does not need one: it seals the message to the recipient's keys. See [Private accounts](private-accounts.md).
 - **Only private addresses can hold stored messages.** An AsyncMessage to a public account that the transaction did not declare cannot be stored and fails the transaction.
 - **The sender cannot be told about failure.** If the receiver's handler later refuses the message, the sender's transaction is long finished. Design receiving handlers so that a legitimate message always succeeds.
 

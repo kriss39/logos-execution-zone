@@ -23,7 +23,7 @@ A PDA is an account with no key. Its id is derived from a program's id and a see
 AccountId::for_public_pda(&program_account_id, &seed)
 ```
 
-Only that program can authorize it. It does so by attaching the seed to an SyncMessage:
+Only that program can authorize it. It does so by attaching the seed to a SyncMessage:
 
 ```rust
 const PDA_SEED: PdaSeed = PdaSeed::new([37; 32]);
@@ -87,7 +87,7 @@ The difference is the model's main footgun. It shows up in two ways.
 
 **A program inside a transaction you signed.** Alice signs a transaction whose root goes to some program P. Every actor on Alice's account now sees `is_authorized == true` for the whole transaction. If P's handler sends `Transfer` to Alice's token actor, the token program honours it. Signing a transaction lends your authority to every program that runs in it, over every account that signed.
 
-**A stored message collected with the spending key.** Anyone can async message any bytes to any registered address. Mallory can async message `Transfer { to: mallory, .. }` to Alice's private balance actor. Nothing happens until Alice collects it. If she collects it with her spending key attached, the transfer runs.
+**A stored message collected with the spending key.** Anyone can send an async message carrying any bytes to any registered address. Mallory can send `Transfer { to: mallory, .. }` to Alice's private balance actor. Nothing happens until Alice collects it. If she collects it with her spending key attached, the transfer runs.
 
 The protocol leaves the second case to the owner on purpose. A private account has two keys: one is enough to receive, the other authorizes spending. Collecting with the spending key means **"I accept what this message asks"**. That is a useful primitive (see [Payment requests](../catalog/requests.md)), and it is dangerous as a default.
 

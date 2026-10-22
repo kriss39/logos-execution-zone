@@ -94,7 +94,7 @@ match message {
 
 **The match never sees a fleet, and never needs a commitment to one.**
 
-**The answer is one transaction with a conversation inside it.** The private board sends an SyncMessage to the public match, the match answers, the board sends again. The proof covers the board's two runs. The sequencer runs the match's two.
+**The answer is one transaction with a conversation inside it.** The private board sends a SyncMessage to the public match, the match answers, the board sends again. The proof covers the board's two runs. The sequencer runs the match's two.
 
 **The defender must be the one to act.** The match cannot push a shot into a private board. That is why the board *asks*.
 

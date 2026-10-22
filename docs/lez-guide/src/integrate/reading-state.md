@@ -35,12 +35,12 @@ Fifteen methods and two subscriptions.
 
 ## The shape an account comes back in
 
-An account is a nonce, a balance, and a map from program account id to that program's actor state:
+An account is a nonce and a map from program account id to that program's actor state. The native balance is one of those entries, under the native token program, rather than a field of its own:
 
 ```json
 {
-  "actor_states": { "<program account id>": "<bytes>" },
-  "nonce": 0
+  "nonce": 0,
+  "data": { "actor_states": { "<program account id>": "<bytes>" } }
 }
 ```
 

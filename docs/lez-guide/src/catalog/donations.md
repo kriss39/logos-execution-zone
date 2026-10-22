@@ -22,7 +22,7 @@ The cause publishes a **blinded address** of its private account and registers i
 Only the native token's own:
 
 - `Transfer { to, amount }`, sent by the donor to their own balance actor;
-- `Credit(amount)`, async message by the donor's balance actor to the cause's address.
+- `Credit(amount)`, sent as an async message by the donor's balance actor to the cause's address.
 
 ## How it runs
 

@@ -73,7 +73,7 @@ The `granularity` matters for private callers: a reply that names the latest blo
 
 **Message board with expiry.** A public actor that keeps the last N messages and drops older ones, so its state stays bounded.
 
-**Name registry.** A public actor per name, derived from the name's hash (pattern 14). It holds an address. Paying "alice" means reading the address and casting to it. A private owner updates the address under a pseudonym.
+**Name registry.** A public actor per name, derived from the name's hash (pattern 14). It holds an address. Paying "alice" means reading the address and sending to it. A private owner updates the address under a pseudonym.
 
 **Notification inbox.** A user's private actor that accepts `Notify { topic, text }` from anyone and never acts on it. Wallets read notifications without collecting them. Programs get a standard way to tell a private user something.
 

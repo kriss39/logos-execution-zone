@@ -20,7 +20,7 @@ The sequencer checks the signatures and nonces, reserves the fee, runs the root 
 
 ### Declaring actors
 
-The engine runs a public handler only for an actor the transaction declared. An SyncMessage to an undeclared actor fails the transaction. An AsyncMessage to an undeclared **private** address is stored for later. An AsyncMessage to an undeclared public account fails, since there is nowhere to store it.
+The engine runs a public handler only for an actor the transaction declared. A SyncMessage to an undeclared actor fails the transaction. An AsyncMessage to an undeclared **private** address is stored for later. An AsyncMessage to an undeclared public account fails, since there is nowhere to store it.
 
 This is why an AsyncMessage "just works" in both worlds: the builder of the transaction decides, by declaring or not, whether the destination is handled now.
 

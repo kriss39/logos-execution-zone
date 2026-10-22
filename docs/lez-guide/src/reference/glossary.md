@@ -60,7 +60,7 @@
 
 **Seat.** A participant's own actor of a shared program, through which they speak to the program's shared actor.
 
-**Seed grant.** A program authorizing one of its PDAs by attaching the seed to an SyncMessage.
+**Seed grant.** A program authorizing one of its PDAs by attaching the seed to a SyncMessage.
 
 **Sealed async message.** A stored message encrypted to its recipient.
 

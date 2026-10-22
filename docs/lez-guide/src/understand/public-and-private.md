@@ -33,7 +33,7 @@ Private does not mean invisible. A short and honest list of what an observer get
 
 That a transaction happened, and when.
 
-Roughly how many private accounts it touched. The wallet pads every private transaction to seven private actions, which is the accounts it touches plus one for a message being collected,, so one private account and six are indistinguishable, but more than seven cannot be padded and reveals its exact count.
+Roughly how many private accounts it touched. The wallet pads every private transaction to seven private actions, which is the accounts it touches plus one for a message being collected, so one private action and six are indistinguishable, but more than seven cannot be padded and reveals its exact count.
 
 Every effect it had on a public account, in full. If your private transaction pays a public address, the amount and the recipient are public. This is the single largest source of leaks in practice, and the designs in Part III are mostly about managing it.
 

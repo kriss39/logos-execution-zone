@@ -66,7 +66,7 @@ assert_eq!(badge.program_account_id, BADGES_PROGRAM, "not from a badge");
 
 1. **Issue.** The issuer's actor sends `Badge` to the holder's address as an async message.
 2. **Collect.** The holder's badge actor stores the issuer. It accepts `Badge` only from the badges program.
-3. **Show.** The holder sends `Show` in a private transaction. The badge sends an SyncMessage to the venue under a fresh blinded address.
+3. **Show.** The holder sends `Show` in a private transaction. The badge sends a SyncMessage to the venue under a fresh blinded address.
 4. **Admit.** The venue sees a message from the badges program naming an issuer it trusts.
 
 ## Why the venue can believe it

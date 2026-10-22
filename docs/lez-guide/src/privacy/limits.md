@@ -24,7 +24,7 @@ A transaction can run private handlers only for accounts whose keys the submitte
 
 **Way around.** A public escrow actor in the middle, with a timeout. Or a group-owned private account, when the parties trust each other with visibility.
 
-## An SyncMessage cannot reach a stranger's private actor
+## A SyncMessage cannot reach a stranger's private actor
 
 Only an AsyncMessage can, and an AsyncMessage waits.
 

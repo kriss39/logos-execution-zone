@@ -23,10 +23,10 @@ There is no new message for the request itself. The request **is** the native to
 native_token::Message::Transfer { to: bob, amount: 10 }
 ```
 
-Bob needs a program to async message it for him, because an AsyncMessage comes from an actor:
+Bob needs a program to send it for him, because an AsyncMessage comes from an actor:
 
 ```rust
-/// The whole requester program: async message the given bytes to the given actor.
+/// The whole requester program: send the given bytes to the given actor, async.
 fn handle_message(input: &ReceiveInput, (to, message): (Actor, Vec<u8>)) -> Response {
     assert!(input.is_authorized && input.from.is_none(), "only the owner sends requests");
     Response::keep_state().send(AsyncMessage { to, message })
@@ -45,7 +45,7 @@ fn handle_message(input: &ReceiveInput, (to, message): (Actor, Vec<u8>)) -> Resp
 |---|---|
 | ignores it | nothing, forever |
 | collects it without her spending key | the handler refuses: `UnauthorizedSender` |
-| collects it **with** her spending key | her balance is debited and a credit is async message to Bob |
+| collects it **with** her spending key | her balance is debited and a credit is sent as an async message to Bob |
 
 The request is consumed when collected, so it cannot be paid twice.
 

@@ -27,4 +27,4 @@ Design as if both were capped: keep state small and bounded, and keep conversati
 |---|---|
 | Private transactions pay no fee | proving is the only cost of a private action, for now |
 | A transaction collects one stored message | draining a mailbox costs one proof per message |
-| Padding to seven private actions | a transaction that touches more than seven private accounts cannot be built by the wallet |
+| Padding to seven private actions | past seven the wallet pads with nothing and warns, so the transaction is still built but its exact count is no longer hidden |

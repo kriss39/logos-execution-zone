@@ -26,7 +26,7 @@ wallet auth-transfer send --from <account> --amount <n> <recipient flags>
 
 | Recipient | Flag | What it takes |
 |---|---|---|
-| An account this wallet owns, public or private | `--to` | a base58 account id with its `Public/` or `Private/` prefix, or a label |
+| Any public account, or a private one this wallet owns | `--to` | a base58 account id with its `Public/` or `Private/` prefix, a label, or a BIP-32 key path. A `Public/` id needs no ownership; a `Private/` one does, because the wallet has to witness it |
 | Someone else's private account | `--to-npk` and `--to-vpk` | the nullifier public key as 32-byte hex, and the ML-KEM-768 viewing key as hex, 1184 bytes |
 | Someone else's private account, from a file | `--to-keys` | a path to a keys file holding npk and vpk on separate lines. Replaces the two flags above |
 | A public account that has never been used | `--to-pk` | the recipient's public key |

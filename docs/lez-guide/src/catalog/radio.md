@@ -18,7 +18,7 @@ The game is in the catalog because each game mechanic is a protocol feature unde
 | an encrypted channel | a sealed AsyncMessage from a private sender |
 | a call sign | a blinded address |
 | accepting a trade | collecting a message with the spending key |
-| docking | an SyncMessage from private to public |
+| docking | a SyncMessage from private to public |
 
 ## Actors
 
@@ -61,7 +61,7 @@ Command::Move { to, now } => {
 
 Nobody sees the move. A move that breaks the speed limit cannot be proven, so it cannot happen.
 
-Every command checks that it comes from the captain and from nobody else. Without that check, a stranger could async message `Command::Radio { to: thief, cargo: everything }` to the ship and hope its captain collects it.
+Every command checks that it comes from the captain and from nobody else. Without that check, a stranger could send `Command::Radio { to: thief, cargo: everything }` to the ship and hope its captain collects it.
 
 ## Radio
 

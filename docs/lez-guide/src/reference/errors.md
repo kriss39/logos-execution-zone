@@ -10,7 +10,7 @@ Sources: `lee/state_machine/core/src/execution_state.rs` and `lee/state_machine/
 |---|---|
 | `ProgramExecutionFailed("Guest panicked: <msg>")` | your handler's assertion failed, and `<msg>` is yours. Write assertions that name the check |
 | `UndeclaredActor` | a `SyncMessage` to an actor the transaction did not declare and so cannot run |
-| `UnboundAsyncDestination` | an async message to an address with no recovery binding registered, so it cannot be stored |
+| `UnboundAsyncDestination` | an `AsyncMessage` **from a public actor** to an address with no recovery binding on chain and none introduced by the same transaction, so it cannot be stored |
 | `UnadmittedPublicActor` | a public actor the transaction touched without admitting it |
 | `MissingFeeDeclaration` | a user public transaction built with the fee-exempt `try_new` instead of `try_new_with_fees` |
 | `OutOfGas` | the transaction exceeded its declared `gas_limit` |

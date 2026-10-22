@@ -46,7 +46,7 @@ Each factor gives a different address. An observer cannot link two addresses of 
 
 Blinded addresses work in both directions:
 
-- **Receiving.** A message async message to the address is collected by the account behind it.
+- **Receiving.** An async message sent to the address is collected by the account behind it.
 - **Sending.** A private actor can present an address instead of its account id as the sender. The receiver sees a stable pseudonym and can reply to it.
 
 Use a fresh address per counterparty, per campaign or per conversation.
@@ -62,7 +62,7 @@ A blinded address is a pseudonym toward the public, not toward the private parti
 
 ## Recovery bindings
 
-An address can receive stored messages **from public senders** only after it is registered. Registration publishes a recovery binding (`lee/state_machine/core/src/recovery.rs`):
+An address can receive stored messages **from public senders** only once a recovery binding for it is on chain, or is introduced by the same privacy-preserving transaction. Registration publishes a recovery binding (`lee/state_machine/core/src/recovery.rs`):
 
 ```rust
 pub struct RecoveryBinding {
@@ -73,7 +73,7 @@ pub struct RecoveryBinding {
 
 The note is encrypted to the owner's viewing key. It tells the owner which of their accounts the address belongs to and with which factor. This is how a wallet restored from a seed finds the messages sent to its addresses.
 
-The binding is created from the recipient's public keys and factor, so the recipient or anyone who holds those can publish it, in a private transaction. Once on chain it is reused. An AsyncMessage from a public actor to an address with no binding fails with `UnboundAsyncDestination`. A sealed message from a private sender needs no binding, because its own note tells the recipient which address it was for.
+The binding is created from the recipient's public keys and factor, so the recipient or anyone who holds those can publish it, in a private transaction. Once on chain it is reused. A binding published by the same transaction also counts, so a sender holding the recipient's keys needs no prior registration, but that transaction has to be a privacy-preserving one. An AsyncMessage from a public actor to an address with no binding, and none introduced alongside it, fails with `UnboundAsyncDestination`. A sealed message from a private sender needs no binding, because its own note tells the recipient which address it was for.
 
 ## The mailbox
 
