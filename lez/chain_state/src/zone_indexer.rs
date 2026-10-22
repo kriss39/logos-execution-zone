@@ -162,86 +162,23 @@ mod tests {
         "phase": "Following"
     }"#;
 
-    /// Reachable for `consensus_info`, failing for every batch read.
-    #[derive(Clone)]
-    struct UnreadableNode;
-
-    #[async_trait]
-    impl adapter::Node for UnreadableNode {
-        async fn consensus_info(&self) -> Result<ChainServiceInfo, NodeError> {
-            Ok(serde_json::from_str(CONSENSUS_INFO)
-                .expect("the fixture matches the node's wire shape"))
-        }
-
-        async fn immutable_blocks(
-            &self,
-            _slot_from: Slot,
-            _slot_to: Slot,
-        ) -> Result<Vec<ApiBlock>, NodeError> {
-            Err(NodeError::Client("node down".to_owned()))
-        }
-
-        async fn time_info(&self) -> Result<TimeInfo, NodeError> {
-            unreachable!()
-        }
-
-        async fn channel_state(
-            &self,
-            _channel_id: ChannelId,
-        ) -> Result<Option<ChannelState>, NodeError> {
-            unreachable!()
-        }
-
-        async fn block_stream(&self) -> Result<adapter::BoxStream<ProcessedBlockEvent>, NodeError> {
-            unreachable!()
-        }
-
-        async fn lib_stream(&self) -> Result<adapter::BoxStream<BlockInfo>, NodeError> {
-            unreachable!()
-        }
-
-        async fn block(&self, _id: HeaderId) -> Result<Option<ApiBlock>, NodeError> {
-            unreachable!()
-        }
-
-        async fn block_events(&self, _id: HeaderId) -> Result<Option<Events>, NodeError> {
-            unreachable!()
-        }
-
-        async fn post_transaction(
-            &self,
-            _tx: SignedOps<Unverified, StandardMode>,
-        ) -> Result<(), NodeError> {
-            unreachable!()
-        }
-
-        async fn fund_tx(
-            &self,
-            _request: WalletFundRequestBody,
-        ) -> Result<WalletFundResponseBody, NodeError> {
-            unreachable!()
-        }
-    }
-
+    /// Fails every read past its first `serve_batches`.
     #[derive(Clone)]
     struct ScriptedNode {
-        serve_batches: Option<usize>,
+        serve_batches: usize,
         served: Arc<AtomicUsize>,
     }
 
     impl ScriptedNode {
-        fn always_serving() -> Self {
+        fn serving(serve_batches: usize) -> Self {
             Self {
-                serve_batches: None,
-                served: Arc::new(AtomicUsize::new(0)),
+                serve_batches,
+                served: Arc::default(),
             }
         }
 
-        fn serving_one_batch() -> Self {
-            Self {
-                serve_batches: Some(1),
-                served: Arc::new(AtomicUsize::new(0)),
-            }
+        fn always_serving() -> Self {
+            Self::serving(usize::MAX)
         }
     }
 
@@ -259,7 +196,7 @@ mod tests {
             _channel_id: ChannelId,
         ) -> Result<adapter::BoxStream<(ZoneMessage, Slot)>, NodeError> {
             let served = self.served.fetch_add(1, Ordering::Relaxed);
-            if self.serve_batches.is_some_and(|limit| served >= limit) {
+            if served >= self.serve_batches {
                 return Err(NodeError::Client("node down".to_owned()));
             }
             Ok(Box::pin(futures::stream::iter(vec![(
@@ -330,8 +267,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_failed_read_is_an_error_item_not_the_end_of_the_stream() {
-        let indexer = ZoneIndexer::new(channel_id(), UnreadableNode);
+    async fn a_failed_read_is_one_error_item_naming_the_range_it_could_not_read() {
+        let indexer = ZoneIndexer::new(channel_id(), ScriptedNode::serving(0));
         let stream = indexer
             .next_messages(None)
             .await
@@ -339,24 +276,8 @@ mod tests {
 
         let items: Vec<_> = stream.collect().await;
 
-        assert!(
-            matches!(items.as_slice(), [Err(Error::Fetch { .. })]),
-            "one failure, reported as an item: {items:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn the_error_carries_the_range_that_was_not_read() {
-        let indexer = ZoneIndexer::new(channel_id(), UnreadableNode);
-        let stream = indexer
-            .next_messages(None)
-            .await
-            .expect("consensus_info is reachable");
-
-        let items: Vec<_> = stream.collect().await;
-
-        let Some(Err(Error::Fetch { from, to, .. })) = items.first() else {
-            panic!("expected a fetch error: {items:?}");
+        let [Err(Error::Fetch { from, to, .. })] = items.as_slice() else {
+            panic!("one failure, reported as an item: {items:?}");
         };
         assert_eq!(*from, Slot::genesis(), "a cold start reads from genesis");
         assert_eq!(
@@ -412,7 +333,7 @@ mod tests {
 
     #[tokio::test]
     async fn messages_served_before_a_failure_are_still_delivered() {
-        let indexer = ZoneIndexer::new(channel_id(), ScriptedNode::serving_one_batch());
+        let indexer = ZoneIndexer::new(channel_id(), ScriptedNode::serving(1));
         let stream = indexer
             .next_messages(None)
             .await
