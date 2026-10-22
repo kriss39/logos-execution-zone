@@ -67,7 +67,13 @@ The code also has a third form, a **shadow program**, identified by its image id
 Choosing between the first two is a privacy decision:
 
 - Disclosed: observers learn that your private transaction used this program.
-- Undisclosed: they learn only that it used some immutable program.
+- Undisclosed: they learn only that it used some immutable program, **and only if that program never crosses the boundary in the transaction.**
+
+That caveat is not a detail. Every boundary entry names an `Actor`, which is `{ account_id, program_account_id }`, and blinding replaces the account id while passing the program account id through in the clear (`lee/state_machine/core/src/execution_state.rs`). So a private-to-public message publishes the sending private actor's program account id, and a public-to-private delivery publishes the receiving one's. Once that id is public the image resolves from it, and the undisclosed claim hides nothing.
+
+Staying off the boundary is necessary but not sufficient. An undisclosed claim proves membership of the set of immutable programs, and every deployment is public, so the set an observer guesses from is only as large as the number of immutable programs on chain.
+
+The bigger limit is that undisclosed is not a property of the program. It is a choice each prover makes per transaction (`ProgramCatalog::with_undisclosed`, `lee/state_machine/src/privacy_preserving_transaction/circuit/mod.rs`), and the default is `Disclosed`. A single transaction by anyone who takes the default publishes the account id and image id for good. Marking a program immutable is what makes undisclosed available to a prover who wants it; it does not keep the program hidden, and an author cannot make that choice on behalf of their users.
 
 ## Where a program keeps its state
 

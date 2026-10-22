@@ -44,7 +44,7 @@ Consequences: a private "balance" is really a set of notes; sweeping them into o
 
 **Public co-signers are linked.** Structural. A public account that authorizes a private transaction signs it and appears in the witness set with its nonce.
 
-**View tags correlate notes to keys, weakly.** Current design choice. One byte per recipient key, constant.
+**View tags correlate init notes to keys, weakly.** Current design choice. One byte, key-derived on init only; random on update.
 
 **Program claims disclose the programs.** Structural for disclosed and for anything with public effects; avoidable only by undisclosed (no public effects, immutable header) or shadow (no public effects, no deployment).
 

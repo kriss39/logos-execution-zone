@@ -29,7 +29,11 @@ Guard::HoldsPrintedCopy { definition_id } => {
 }
 ```
 
-The inspect on the private holding runs in the proof: the chain never sees the holding, only that the proof required one. The public effects say "one more admission" and burn a receipt nobody can link to a ticket. The `secret` should be bound to the ticket, or one ticket admits many people: use the holding's account id as the secret's source (`secret = H(nsk ‖ event)` computed by the wallet; the program cannot check that, so the honest binding is: the receipt nullifier is `H(event ‖ holding_account_id)`, and the plan knows `holding.account_id` from `AccountMeta`). That binds one admission per ticket-holding account, and the account id is never published (only its hash under a domain).
+The inspect on the private holding runs in the proof: the chain never sees the holding, only that the proof required one. The public effects say "one more admission" and burn a receipt that no *stranger* can link to a ticket.
+
+**The venue can link it, and the venue is the party this design exists to hide attendance from.** Binding the receipt to the holding, below, makes its address a deterministic function of `holding_account_id`. Under the issuance in this chapter the venue names each buyer's private account to write the holding onto it, so it holds the whole preimage set. That is a property of this issuance, not of the protocol: a bearer voucher the buyer redeems themselves never shows the venue an account id, and its receipt is then unlinkable to the venue too. It can compute every receipt address and read off exactly which tickets were used. Hashing is not concealment when the preimage set is known and small, which is the rule stated in [What a private transaction reveals](../privacy/what-leaks.md).
+
+The tension is real and the chapter cannot have both: an unlinkable receipt and one-admission-per-ticket are not simultaneously available here. With a random per-holder `secret` the receipt is unlinkable and one ticket admits many people. With the binding below, admission is capped and the issuer can enumerate. This chapter takes the capped one: the receipt nullifier is `H(event ‖ holding_account_id)`, and the plan knows `holding.account_id` from `AccountMeta`. That binds one admission per ticket-holding account. Read the receipt as unlinkable to the public and linkable by whoever knows the holding account ids, which for venue-issued tickets is the venue.
 
 Transferable tickets stay transferable: the token program moves them privately between accounts, and the receipt is per holding account, so a resold ticket admits its new holder if the previous one never used it.
 
@@ -86,7 +90,7 @@ A public Merkle root of eligible leaves; a claimant proves a leaf in instruction
 
 | Design | Holder/claimant | Verifier sees | Hidden |
 |---|---|---|---|
-| Ticket admission | private holding | one admission, an unlinkable receipt | which ticket, who |
+| Ticket admission | private holding | one admission, a receipt the public cannot link and the issuer can | which ticket, who |
 | Attestation | private record | the claim, the emitting program | everything else about the record |
 | Credential issue | private PDA | nothing (if issuer private) or the issuer's signature | the holder, the contents |
 | Name registry, secret owner | private tx | entry changes | the owner |

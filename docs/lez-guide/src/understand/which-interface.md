@@ -41,7 +41,7 @@ The short version is that plan/apply could not express a program paying someone 
 
 Under plan/apply a program affected another account by proposing an effect, and every effect in a transaction had to be applied within it. A private account can only be advanced by its owner's proof, so a program could not pay a private recipient at all unless that recipient was party to the transaction. The actor model adds the async message and the mailbox: a payment to a stranger's private account is stored on chain and collected later, by its owner, in their own transaction.
 
-The last three rows of the table are worth noticing on their own. The actor model also closed three correlation channels that plan/apply had: the view tag that was constant per recipient key, the deterministic initialization nullifier, and the identifier that let one key pair hold many distinct private accounts. None of those were the motivation, and all three are real privacy improvements.
+The last three rows of the table are worth noticing on their own. The actor model also closed three correlation channels that plan/apply had: the view tag that was key-derived on an init note, the deterministic initialization nullifier, and the identifier that let one key pair hold many distinct private accounts. None of those were the motivation, and all three are real privacy improvements.
 
 ## If you are on plan/apply
 

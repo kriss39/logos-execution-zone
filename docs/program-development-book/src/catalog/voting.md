@@ -90,7 +90,11 @@ Move the tally off chain into notes only the tallier can read, using **init-only
 - To vote for option `k`, a voter transfers their token to a **fresh private slot under the tallier's key** whose identifier encodes the choice: `identifier = H(election, k, random)`... except that identifiers are inside the note and the tallier learns the choice only by decrypting, which is exactly right. Simpler: the tallier publishes one key per option and the voter sends to option `k`'s key.
 - After the election the tallier syncs, counts the tokens per option key, and publishes the result. To make the result verifiable the tallier proves it: a private transaction per batch of seven slots that inspects each one (`HoldsVoteToken`) and emits a public effect `Counted { option, n }` on the election record; the batches add up and each slot is nullified so it cannot be counted twice.
 
-What the chain sees during voting: private token transfers, seven notes each, no public effects, the token program claim. Not who voted, not how, not the tally. What it sees at counting: `Counted` effects adding up to the result.
+What the chain sees during voting: private token transfers, seven notes each, no public effects, the token program claim. Not who voted.
+
+**The tally is not hidden, and this is a defect in the design rather than a caveat.** The tallier publishes one key per option, and an init note's view tag is one published byte, `H(npk ‖ vpk)[0]`, derived from the recipient's keys ([What a private transaction reveals](../privacy/what-leaks.md)). Each ballot opens a fresh slot under the option's key, so each ballot is an init note and carries a publicly computable tag identifying the option it went to. An observer buckets the private actions in the voting window by tag and reads off per-option counts, contaminated only by the roughly 1-in-256 collision rate from unrelated traffic. The same arithmetic is done earlier for a single key, in [private donations](donations.md), where it narrows "is this a donation to X" from 1 in N to 1 in N/256; here it is worse, because the keys are published by construction rather than merely public.
+
+Nothing in this design hides the running tally. Treat Design B as hiding *who* voted, not *how the vote is going*. The "who" half does hold, and for a reason worth naming: a voter spends from their own existing private slot, which is an update, and update notes carry a random tag, so the organiser who minted the tokens cannot follow them. A fix needs ballots that do not carry a per-option recipient key, which this model has no primitive for: see [Design C](#design-c-hidden-tally-hidden-ballots-no-trust-not-available).
 
 Trust: the tallier could refuse to count some ballots (it cannot forge them: it has no vote tokens). Voters cannot verify their own ballot was counted without the tallier revealing per-slot information. A committee tallier under a group key spreads the trust without changing the mechanics: the ballot slots are independent notes under the tallier key, the `Counted` effect on the public record commutes, and the group key is needed only to build the witnesses, so counting does not serialize on it.
 
@@ -109,7 +113,7 @@ A tally that is both hidden and updated by many voters would be a private accoun
 | public account id, votes by signing (public tx) | public | no | no | yes |
 | public account id, votes by signing a private tx | private | no (signature) | no | yes |
 | secret credential, Design A | private | yes | no (in aggregate only) | yes |
-| vote token in a private account, Design B | private | yes | from everyone but the tallier | no, until counted |
+| vote token in a private account, Design B | private | yes | no: the per-option view tag leaks it | yes: per-option counts are readable throughout |
 
 ## Ideas
 
