@@ -1,6 +1,7 @@
-use std::{collections::BTreeMap, fmt::Display};
+use std::collections::BTreeMap;
 
 use anyhow::Result;
+use kameo::error::SendError;
 use lee::Actor;
 use lee_core::CommitmentPosition;
 use sequencer_executor_actor::protocol::{
@@ -22,43 +23,53 @@ impl SequencerServiceFFIWrapper {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct FfiSequencerClientError(pub String);
+#[derive(Debug, thiserror::Error)]
+pub enum FfiSequencerClientError {
+    #[error("Sequencer executor actor failed")]
+    SequencerExecutorError(#[from] sequencer_executor_actor::error::Error),
+    #[error("Failed to send request to actor")]
+    ActorSendError(#[source] anyhow::Error),
+    #[error("Call arguments are incorrect")]
+    ArgumentError(#[source] anyhow::Error),
+}
 
-impl Display for FfiSequencerClientError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Sequencer FFI client error : {:?}", self.0)
+impl<T: Send + Sync + 'static> From<SendError<T>> for FfiSequencerClientError {
+    fn from(value: SendError<T>) -> Self {
+        Self::ActorSendError(anyhow::Error::from(value))
     }
 }
 
-impl std::error::Error for FfiSequencerClientError {}
-
-impl From<anyhow::Error> for FfiSequencerClientError {
-    fn from(value: anyhow::Error) -> Self {
-        Self(value.to_string())
-    }
-}
-
-impl From<FfiSequencerClientError> for sequencer_service_rpc::ClientError {
-    fn from(value: FfiSequencerClientError) -> Self {
-        Self::Custom(value.0)
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "It is by design, other variants of no use to wallet"
+)]
+impl<T: Send + Sync + 'static> From<SendError<T, sequencer_executor_actor::error::Error>>
+    for FfiSequencerClientError
+{
+    fn from(value: SendError<T, sequencer_executor_actor::error::Error>) -> Self {
+        match value {
+            SendError::HandlerError(e) => Self::SequencerExecutorError(e),
+            other => Self::ActorSendError(anyhow::Error::from(other)),
+        }
     }
 }
 
 impl From<FfiSequencerClientError> for ExecutionFailureKind {
     fn from(value: FfiSequencerClientError) -> Self {
-        sequencer_service_rpc::ClientError::from(value).into()
+        match value {
+            FfiSequencerClientError::SequencerExecutorError(val) => {
+                Self::SequencerClientError(val.to_string())
+            }
+            FfiSequencerClientError::ArgumentError(val) => {
+                Self::SequencerClientError(val.to_string())
+            }
+            FfiSequencerClientError::ActorSendError(val) => Self::SequencerError(val),
+        }
     }
 }
 
 impl WalletSequencerClient for SequencerServiceFFIWrapper {
     type Error = FfiSequencerClientError;
-
-    fn from_config(_config: &wallet::config::WalletConfig) -> Result<Self> {
-        anyhow::bail!(
-            "Wallet config des not hold enough information to produce sequencer ffi, use corresponding sequencer_ffi_* function"
-        );
-    }
 
     async fn get_account(
         &self,
@@ -69,8 +80,7 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
             .executor_ref()
             .ask(GetAccount { account_id })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?
+            .await?
             .account)
     }
 
@@ -80,8 +90,7 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
             .executor_ref()
             .ask(GetAccountBalance { account_id })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?)
+            .await?)
     }
 
     async fn get_accounts_nonces(
@@ -93,8 +102,7 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
             .executor_ref()
             .ask(GetAccountNonces { account_ids })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?)
+            .await?)
     }
 
     async fn get_block(
@@ -106,8 +114,7 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
             .executor_ref()
             .ask(GetBlock { block_id })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?)
+            .await?)
     }
 
     async fn get_block_range(
@@ -119,23 +126,16 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
             .0
             .executor_ref()
             .ask(GetBlockRange {
-                range: (start_block_id..=end_block_id)
-                    .try_into()
-                    .map_err(anyhow::Error::from)?,
+                range: (start_block_id..=end_block_id).try_into().map_err(|err| {
+                    FfiSequencerClientError::ArgumentError(anyhow::Error::from(err))
+                })?,
             })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?)
+            .await?)
     }
 
     async fn get_last_block_id(&self) -> Result<lee_core::BlockId, Self::Error> {
-        Ok(self
-            .0
-            .executor_ref()
-            .ask(GetLastBlockId {})
-            .send()
-            .await
-            .map_err(anyhow::Error::from)?)
+        Ok(self.0.executor_ref().ask(GetLastBlockId {}).send().await?)
     }
 
     async fn get_transaction(
@@ -147,8 +147,7 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
             .executor_ref()
             .ask(GetTransaction { tx_hash })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?)
+            .await?)
     }
 
     async fn send_transaction(
@@ -164,8 +163,7 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
                 origin: TransactionOrigin::User,
             })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?;
+            .await?;
 
         Ok(tx_hash)
     }
@@ -181,8 +179,7 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
                 actor_state_selector,
             })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?
+            .await?
             .account)
     }
 
@@ -218,8 +215,7 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
                 message_position,
             })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?)
+            .await?)
     }
 
     async fn get_publications(
@@ -235,8 +231,7 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
                 limit,
             })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?)
+            .await?)
     }
 
     async fn get_recovery_binding(
@@ -248,7 +243,6 @@ impl WalletSequencerClient for SequencerServiceFFIWrapper {
             .executor_ref()
             .ask(GetRecoveryBinding { address })
             .send()
-            .await
-            .map_err(anyhow::Error::from)?)
+            .await?)
     }
 }
