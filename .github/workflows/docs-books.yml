@@ -4,6 +4,7 @@ on:
       - "docs/lez-guide/**"
       - "docs/program-development-book/**"
       - "docs/ci/check_book_paths.py"
+      - "docs/LEZ testnet v0.1 tutorials/**"
       - ".github/workflows/docs-books.yml"
       # The path check resolves citations against the code, so a change that
       # moves a cited file has to run it too. Without these, moving a file
@@ -15,6 +16,8 @@ on:
       - "test_programs/**"
       - "integration_tests/**"
       - "bedrock/**"
+      - "tools/**"
+      - "artifacts/**"
 
 permissions:
   contents: read

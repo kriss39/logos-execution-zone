@@ -2,7 +2,7 @@
 
 A private account is a normal account whose current value is known only to holders of its viewing key, whose existence on chain is a commitment, and whose every update is proven rather than executed by the sequencer. This chapter covers the keys, the lifecycle of a private account, what a note is, how the wallet finds notes, and the two families of private program-derived accounts.
 
-Sources: `lee/state_machine/core/src/{nullifier,commitment,encryption,circuit_io}.rs`, `lee/privacy_preserving_circuit/src/output.rs`, `lee/key_protocol/src/key_management/`, `lez/wallet/src/account_manager.rs`.
+Sources: `lee/state_machine/core/src/{nullifier,commitment,circuit_io}.rs`, `lee/state_machine/core/src/encryption/mod.rs`, `lee/privacy_preserving_circuit/src/output.rs`, `lee/key_protocol/src/key_management/`, `lez/wallet/src/account_manager.rs`.
 
 ## Keys
 

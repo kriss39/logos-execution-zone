@@ -29,14 +29,23 @@ KNOWN = {
     # reader will have and not one this repository ships.
     "lez/sequencer/service/sequencer_home": "runtime directory, created by setup",
     # `docs/program-development-book` documents the plan/apply interface as
-    # released in v0.3.1. These four are correct at that tag and moved on dev,
-    # so they are version skew rather than breakage. Listing them keeps that
-    # book's other 88 citations under watch instead of excluding it wholesale.
+    # released in v0.3.1. These two do not resolve here for reasons that are not
+    # breakage, so listing them keeps that book's other 92 citations under watch
+    # instead of excluding it wholesale.
     "lee/state_machine/core/src/account/data.rs": "exists at v0.3.1, replaced on dev",
-    "lee/state_machine/core/src/encryption.rs": "is a directory on dev, encryption/mod.rs",
-    "lee/state_machine/core/src/validation.rs": "pre-912 file, cited as history",
+    "lee/state_machine/core/src/validation.rs": "deleted by PR 912, cited as history",
 }
 
+# Known and accepted limits:
+#   - A second path after a gloss, as `a.rs: see also b.rs`, is dropped. A
+#     whitespace tokeniser would catch it and would also split
+#     `docs/LEZ testnet v0.1 tutorials`, which cost ten false positives when
+#     tried. No live instance, so not worth that trade.
+#   - Link anchors are not validated, only the file a link points at.
+#   - A citation is only checked when it starts with a TOP prefix, so a
+#     top-level file like `Justfile` and a path under a directory not listed
+#     above, as `target/` and `completions/`, go unchecked. Both have live
+#     instances. Widening TOP to bare filenames would match ordinary prose.
 BRACE = re.compile(r"\{([^{}]*)\}")
 
 
@@ -62,12 +71,15 @@ SEPARATORS = re.compile(r"\s+and\s+|,\s+|;\s+")
 
 def candidates(span):
     """Yields each repository path a backticked span names, or nothing."""
-    if CROSS_REPO.match(span):
+    # An in-repo path can carry a gloss too, and `lez/indexer: the indexer
+    # service` matches the org/repo shape. Only skip when it is not one of ours.
+    if CROSS_REPO.match(span) and not span.startswith(TOP):
         return
     # A trailing gloss, as `lee/.../data.rs: the account payload`. Keep the path.
     if ": " in span:
         span = span.split(": ", 1)[0]
-    for part in SEPARATORS.split(span):
+    # Braces expand before the split, or `, ` cuts `{nullifier, commitment}.rs` in two.
+    for part in (p for whole in expand(span) for p in SEPARATORS.split(whole)):
         part = part.strip()
         if not part or not part.startswith(TOP):
             continue
@@ -77,11 +89,9 @@ def candidates(span):
             continue
         # `lee/.../mod.rs::Symbol` names a file and a symbol in it; check the file.
         # A bare Rust path like `lee_core::account` never starts with a TOP prefix.
-        part = part.split("::", 1)[0]
-        for path in expand(part):
-            path = path.strip().rstrip(".,;:").rstrip("/")
-            if path:
-                yield path
+        path = part.split("::", 1)[0].strip().rstrip(".,;:").rstrip("/")
+        if path:
+            yield path
 
 
 def cited_paths(src):
@@ -100,7 +110,9 @@ def cited_paths(src):
 
 
 LINK = re.compile(r"\]\((\.{0,2}[^)\s:]*\.(?:md|svg|png))(?:#[^)]*)?\)")
-INCLUDE = re.compile(r"\{\{#include\s+([^}\s]+)")
+# mdbook allows `{{#include path:1:5}}` and `{{#include path:anchor}}`, so the
+# path stops at the first colon.
+INCLUDE = re.compile(r"\{\{#include\s+([^}\s:]+)")
 
 
 def broken_links(book):
