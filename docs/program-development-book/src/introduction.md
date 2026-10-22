@@ -4,7 +4,7 @@ The Logos Execution Zone (LEZ) is a programmable chain with two kinds of account
 
 This book is the developer manual for that programming model. It is written against the state of the repository after the "incremental updates" change (pull request 912), which replaced the older read-then-write program interface with the two-entrypoint `plan` / `apply` model described in [Plan and apply](foundations/plan-apply.md). Everything here assumes that model.
 
-> **A newer model.** Pull request 935 replaces plan/apply with transactional actors. Its manual is `docs/actor-program-development-book/`. A box marked **With actors** in this book says what changes for that design under the new model.
+> **A newer model.** Pull request 935 replaces plan/apply with transactional actors, and ships in `v0.4.0`. Its manual is `docs/lez-guide/`, which also covers using and integrating with the zone. This book remains the manual for plan/apply, which is what every current release runs. A box marked **With actors** in this book says what changes for that design under the new model.
 
 ## What this book is
 

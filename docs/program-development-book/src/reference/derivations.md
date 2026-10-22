@@ -1,6 +1,6 @@
 # Account-id derivations
 
-All hashes are SHA-256 over a 32-byte domain prefix followed by the fields, unless noted. `‖` is concatenation. Integers are little-endian. Sources: `lee/state_machine/core/src/{program/mod.rs,nullifier.rs,commitment.rs,encryption/mod.rs}`, `lee/state_machine/src/signature/public_key.rs`, `lee/key_protocol/`.
+All hashes are SHA-256 over a domain prefix followed by the fields, unless noted. Prefix lengths vary and are not all 32 bytes. Account-id, commitment and nullifier-value prefixes are padded to 32. The key-derivation prefixes in the Keys table below are their natural lengths: `ask` 33, `nsk` and `npk` 29, `vsk` 27. The view tag is 18, `esk` 14 and the note key 20. The two private-nonce rows have no domain prefix at all. `‖` is concatenation. Integers are little-endian, except the key-derivation `index`, which is big-endian to follow BIP-032. Sources: `lee/state_machine/core/src/{program/mod.rs,nullifier.rs,commitment.rs,encryption/mod.rs}`, `lee/state_machine/src/signature/public_key.rs`, `lee/key_protocol/`.
 
 ## Account ids
 
@@ -12,7 +12,7 @@ All hashes are SHA-256 over a 32-byte domain prefix followed by the fields, unle
 | Private PDA | `/LEE/v0.3/AccountId/PrivatePDA/` | `program_account_id` ‖ `seed` ‖ `npk` ‖ `vpk` ‖ `identifier` (32) |
 | Shadow program | `/LEE/v0.3/AccountId/Shadow/` | `from_builtin_program(image_id)` (32) |
 | Immutable mirror | `/LEE/v0.3/AccountId/ImmutMirror/` | header account id (32) |
-| Builtin program | `/LEE-BuiltinProgram/v1/AccountId` | the program's stable name, e.g. `b"token"`, `b"amm"`, `b"clock"`, `b"fee"`, `b"sequencer_stake"` |
+| Builtin program | `/LEE-BuiltinProgram/v1/AccountId` | the program's stable name, e.g. `b"clock"`, `b"fee"`, `b"bridge"`, `b"sequencer_stake"`, `b"wrapped_token"` |
 | Test-seeded program | none (byte reinterpretation) | image id `[u32; 8]` as 32 LE bytes (`from_builtin_program`, tests only) |
 | Genesis segment | `/LEE/v0.3/AccountId/GenesisSeg/` | header id ‖ index (u32) |
 

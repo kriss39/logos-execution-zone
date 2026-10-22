@@ -7,7 +7,7 @@ A program is a RISC Zero guest binary (an ELF for the `riscv32im-risc0-zkvm-elf`
 - The **image id** is a hash of the bytecode. It is what the privacy circuit verifies receipts against and what a `ProgramImageClaim` commits to. Two deployments of the same bytecode share an image id.
 - The **program account id** is the address a transaction dispatches to and the key under which the program's shards live. It is the account that holds the program's header. The same bytecode deployed twice at two headers is two distinct programs: separate shards, separate PDAs, separate `self_account_id`.
 
-Builtin programs shipped in genesis live at a **stable name address**: `AccountId::from_builtin_program_name(b"token")` is `SHA256("/LEE-BuiltinProgram/v1/AccountId" ‖ "token")`, and every builtin's core crate exports the helper (`token_core::token_account_id()`, `amm_core::amm_account_id()`, `clock_core::clock_account_id()`, and so on, re-exported from the `programs` crate). The address does not change when the bytecode is upgraded, which is the point: a builtin's PDAs and shard keys survive a new image id. `AccountId::from_builtin_program(image_id)`, the image id's bytes reinterpreted, still exists but only as a helper for seeding test programs. A user-deployed program lives wherever its deployer put the header.
+Builtin programs shipped in genesis live at a **stable name address**: `AccountId::from_builtin_program_name(b"clock")` is `SHA256("/LEE-BuiltinProgram/v1/AccountId" ‖ "clock")`, and every builtin's core crate exports the helper (`clock_core::clock_account_id()`, `fee_core`, `sequencer_stake_core` and so on, re-exported from the `programs` crate). The address does not change when the bytecode is upgraded, which is the point: a builtin's PDAs and shard keys survive a new image id. `AccountId::from_builtin_program(image_id)`, the image id's bytes reinterpreted, still exists but only as a helper for seeding test programs. A user-deployed program lives wherever its deployer put the header.
 
 ## Deployment through the program loader
 
@@ -34,7 +34,7 @@ Three instructions:
 
 Limits: at most `MAX_PROGRAM_SEGMENTS` = 20 segments, each under 100 KiB, with `MAX_SEGMENT_DATA_LEN` = 96 KiB recommended. Segments hold only the user ELF; the protocol re-attaches its fixed kernel before computing the image id.
 
-The wallet wraps all of this: `wallet deploy-program path/to/program.bin` creates fresh header and segment accounts and submits the transactions, and the `ProgramLoader` facade (`lez/wallet/src/program_facades/program_loader.rs`) exposes the same steps to Rust. The examples use `program_deployment::deploy_program`, which returns the header's account id.
+The wallet wraps all of this: `wallet program-loader deploy --elf path/to/program.bin --header <account> --segments <account>...` submits the transactions over accounts you created first (`wallet account new public --label ...`, one segment account per 96 KiB of user ELF), and the `ProgramLoader` facade (`lez/wallet/src/program_facades/program_loader.rs`) exposes the same steps to Rust. The examples use `program_deployment::deploy_program`, which returns the header's account id.
 
 Deployment is an ordinary public transaction and is charged like one. It cannot be done privately: the loader is public-only protocol code and the circuit refuses to dispatch to it.
 
@@ -46,13 +46,10 @@ Immutability buys one more thing. When a header becomes immutable, the loader em
 
 ## Builtin programs
 
-Genesis seeds these programs (`lez/programs/src/lib.rs`), each with an immutable header:
+Genesis seeds these programs (`lez/testnet_initial_state/src/lib.rs`), each with an immutable header. The token, associated-token-account and AMM programs used to be here and now live in `logos-blockchain/lez-programs`, deployed rather than genesis-seeded:
 
 | Program | Role |
 |---|---|
-| `token` (`token_account_id()`) | fungible and non-fungible tokens: definitions, holdings, mint, burn, transfer, NFT printing |
-| `associated_token_account` | deterministic per-owner holding addresses, custody via PDA seeds |
-| `amm` | constant-product pools over `token` |
 | `clock` | block id and timestamp, written by the sequencer at the end of every block |
 | `fee` | the dual fee market, distribution and refunds |
 | `bridge` | L1 deposits (withdrawals are disabled) |
@@ -65,7 +62,7 @@ Two more are native, not guests: the **native token program** at `[0; 32]` and t
 
 ## Anatomy of a program crate
 
-The builtins follow a layout worth copying (see `lez/programs/token/`):
+The builtins follow a layout worth copying (see `logos-blockchain/lez-programs: programs/token/`):
 
 - `core/` holds the `Instruction` enum, the on-chain data types with their `ShardData` conversions, and the PDA derivations. It compiles for both the guest and the host, so wallets and tests can build instructions and decode shards.
 - `src/lib.rs` holds `plan`, `apply` and the `Effect` enum. It is also host-compilable, which is what makes unit-testing `plan` and `apply` as plain Rust functions possible.
