@@ -28,6 +28,8 @@ use wallet::{
 pub const L2_TO_L1_TIMEOUT: Duration = Duration::from_mins(6);
 /// Maximum time a single [`wait_until`] may poll before giving up.
 const PHASE_TIMEOUT: Duration = Duration::from_secs(360);
+/// Bound on the indexer's status snapshot: it goes into an error message, so it cannot wait long.
+const INDEXER_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 pub fn no_seal(_body: &MessageBody) -> Result<RecipientEncryption, lee::error::LeeError> {
@@ -296,6 +298,7 @@ pub async fn wait_for_indexer_to_catch_up(ctx: &TestContext) -> anyhow::Result<u
                 .unwrap_or(0);
             match first_ind {
                 None => first_ind = Some(ind),
+                // Only a forward move counts, so a flat or regressed reading reads as stuck.
                 Some(_) if ind > last_ind => last_moved = std::time::Instant::now(),
                 Some(_) => {}
             }
@@ -329,16 +332,17 @@ pub async fn wait_for_indexer_to_catch_up(ctx: &TestContext) -> anyhow::Result<u
         }
     }
 }
+
 /// The indexer's own account of ingestion, for a wait that did not finish.
 async fn indexer_diagnosis(ctx: &TestContext) -> String {
     use indexer_service_rpc::RpcClient as _;
 
-    match tokio::time::timeout(Duration::from_secs(5), ctx.indexer_client().get_status()).await {
+    match tokio::time::timeout(INDEXER_STATUS_TIMEOUT, ctx.indexer_client().get_status()).await {
         Ok(Ok(status)) => format!(
             "Indexer state {:?}, last error {:?}, stall reason {:?}, cross-zone halt {:?}",
             status.state, status.last_error, status.stall_reason, status.cross_zone_halt
         ),
         Ok(Err(err)) => format!("Indexer status unavailable: {err}"),
-        Err(_elapsed) => "Indexer status did not answer within 5s".to_owned(),
+        Err(_elapsed) => format!("Indexer status did not answer within {INDEXER_STATUS_TIMEOUT:?}"),
     }
 }

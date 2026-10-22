@@ -519,7 +519,10 @@ impl Message<PublishBlock> for BedrockActor {
             })
         };
         if published.is_ok() {
-            info!("Published block with the size of {data_byte_size} bytes");
+            info!(
+                "Published block {} with the size of {data_byte_size} bytes",
+                block.header.block_id
+            );
         }
         published
     }
