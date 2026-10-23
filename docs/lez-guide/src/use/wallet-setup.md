@@ -14,7 +14,7 @@ Check it can reach a node:
 wallet check-health
 ```
 
-On first run it asks for a password twice. An empty password leaves the store unencrypted. A non-empty one is required by every later command, or read from `LEE_WALLET_PASSWORD`.
+On first run it asks for a password twice. Set one: an empty password leaves the store unencrypted, and on the current `dev` tree such a store cannot be read back once it holds a synced private account. A non-empty password is required by every later command, or read from `LEE_WALLET_PASSWORD`.
 
 ## The commands
 

@@ -47,7 +47,7 @@ Then check the wallet can reach the sequencer:
 wallet check-health
 ```
 
-On first run the wallet asks for a password twice. An empty password leaves the wallet store unencrypted, which is fine for a local devnet. A non-empty one is then required by every later command, or read from `LEE_WALLET_PASSWORD`.
+On first run the wallet asks for a password twice. Set one, even on a devnet: on the current `dev` tree an unencrypted store cannot be read back once it holds a synced private account, and every later command fails with `Failed to parse storage file`. A non-empty password is then required by every later command, or read from `LEE_WALLET_PASSWORD`.
 
 You should see `✅All looks good!`.
 
