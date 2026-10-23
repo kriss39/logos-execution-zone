@@ -89,7 +89,7 @@ async fn main() {
     let cli = Cli::parse();
 
     // Initialize wallet
-    let mut wallet_core = WalletCore::<SequencerClient>::from_env().unwrap();
+    let mut wallet_core = WalletCore::from_env().unwrap();
 
     // Deploy the program through `program_loader`; `program` is also needed directly below, as
     // the local proving bundle for the private-tx arms.
