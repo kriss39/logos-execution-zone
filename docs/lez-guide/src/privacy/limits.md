@@ -24,9 +24,9 @@ A transaction can run private handlers only for accounts whose keys the submitte
 
 **Way around.** A public escrow actor in the middle, with a timeout. Or a group-owned private account, when the parties trust each other with visibility.
 
-## A SyncMessage cannot reach a stranger's private actor
+## A `SyncMessage` cannot reach a stranger's private actor
 
-Only an AsyncMessage can, and an AsyncMessage waits.
+Only an `AsyncMessage` can, and an `AsyncMessage` waits.
 
 **Consequence.** No synchronous question to someone else's private state. You cannot ask "does Bob's private account hold a badge?" and get an answer in the same transaction.
 

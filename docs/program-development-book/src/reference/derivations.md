@@ -1,6 +1,6 @@
 # Account-id derivations
 
-All hashes are SHA-256 over a domain prefix followed by the fields, unless noted. Prefix lengths vary and are not all 32 bytes. Account-id, commitment and nullifier-value prefixes are padded to 32. The key-derivation prefixes in the Keys table below are their natural lengths: `ask` 33, `nsk` and `npk` 29, `vsk` 27. The view tag is 18, `esk` 14 and the note key 20. The two private-nonce rows have no domain prefix at all. `‖` is concatenation. Integers are little-endian, except the key-derivation `index`, which is big-endian to follow BIP-032. Sources: `lee/state_machine/core/src/{program/mod.rs,nullifier.rs,commitment.rs,encryption/mod.rs}`, `lee/state_machine/src/signature/public_key.rs`, `lee/key_protocol/`.
+All hashes are SHA-256 over a domain prefix followed by the fields, unless noted. Prefix lengths vary and are not all 32 bytes. Account-id, commitment and nullifier-value prefixes are padded to 32. The key-derivation prefixes in the Keys table below are their natural lengths: `ask` 33, `nsk` and `npk` 29, `vsk` 27. The view tag is 18, `esk` 14 and the note key 20. The two private-nonce rows have no domain prefix at all. `‖` is concatenation. Integers are little-endian, except the key-derivation `index`, which is big-endian to follow BIP-032. Two different keys are abbreviated `ssk`: the private tree's secret spending key, and the public tree's Schnorr secret key. The two trees share only the BIP-39 seed. Sources: `lee/state_machine/core/src/{program/mod.rs,nullifier.rs,commitment.rs,encryption/mod.rs}`, `lee/state_machine/src/signature/public_key.rs`, `lee/key_protocol/src/key_management/secret_holders.rs`, `lee/key_protocol/src/key_management/key_tree/keys_public.rs`.
 
 ## Account ids
 
@@ -22,6 +22,12 @@ Reserved: native token program `[0; 32]`, program loader `[0xFE; 32]`, clock acc
 
 | Key | Derivation |
 |---|---|
+| BIP-39 seed | `mnemonic.to_seed(passphrase)`, 64 bytes, shared by both key trees |
+| private `ssk` | `first32(HMAC-SHA512` keyed `"LEE_seed"`, iterated 2048 times over the seed`)` |
+| public tree root `(sk, cc)` | `HMAC-SHA512(seed)` keyed `"/LEE-Keys/v1/Master/Public"`, split 32 and 32 |
+| public tree child `(sk, cc)` | `sk + first32(HMAC-SHA512(0x00 ‖ sk ‖ index_be)` keyed `cc) mod n`, new `cc` is the last 32. Hardened only |
+| Schnorr `ssk` | `sk + SHA256(compressed secp256k1 public key of sk) mod n`, the BIP-340 tweak |
+| Schnorr public key | the x-only 32 bytes of `ssk · G`. Its account id is the `Public, key-held` row above |
 | `ask` | `SHA256("/LEE-Keys/v1/Authorization/Secret" ‖ ssk ‖ index_be)` |
 | `nsk` | `SHA256("/LEE-Keys/v1/Nullifier/Secret" ‖ ask)` |
 | `npk` | `SHA256("/LEE-Keys/v1/Nullifier/Public" ‖ nsk)` |

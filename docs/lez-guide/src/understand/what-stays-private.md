@@ -7,9 +7,9 @@ A summary for deciding whether LEZ fits a problem. The exhaustive versions are [
 | Hidden | Published |
 |---|---|
 | the contents of a private account | that a transaction happened, and when |
-| the ids of private accounts | every effect on a public account, in full: amounts, recipients, the lot |
+| the ids of private accounts, unless a sender presents canonically or a payer is handed a canonical address | every effect on a public account, in full: amounts, recipients, the lot |
 | which accounts a private transaction touched | the number of private actions, which is accounts touched plus one for a collected message, padded to seven |
-| the inputs and responses of private handlers | which programs ran, unless deployed immutably and run undisclosed |
+| the inputs and responses of private handlers | which programs ran. Undisclosed needs an immutable header and is a per-transaction choice, and `Disclosed` is the default |
 | messages between private actors delivered inside the transaction | the validity window the handler set |
 | events emitted by private handlers, which are dropped entirely | a stored message's destination binding, so it can be collected |
 

@@ -40,13 +40,13 @@ Consequences: a private "balance" is really a set of notes; sweeping them into o
 
 ## Identity and linkability
 
-**Init nullifiers are deterministic.** Structural. `H(account_id)`. Anyone who knows an account id sees its initialization. Random identifiers make ids unguessable; predictable ones (a public counter, a username hash) make every payment to them watchable. This is the difference between a private donation and a public one that happens to be encrypted.
+**Init nullifiers are deterministic.** As released. `H(account_id)`, keyed by `nsk` on `dev` but in no tag yet. Anyone who knows an account id sees its initialization. Random identifiers make ids unguessable; predictable ones (a public counter, a username hash) make every payment to them watchable. This is the difference between a private donation and a public one that happens to be encrypted.
 
 **Public co-signers are linked.** Structural. A public account that authorizes a private transaction signs it and appears in the witness set with its nonce.
 
 **View tags correlate init notes to keys, weakly.** Current design choice. One byte, key-derived on init only; random on update.
 
-**Program claims disclose the programs.** Structural for disclosed and for anything with public effects; avoidable only by undisclosed (no public effects, immutable header) or shadow (no public effects, no deployment).
+**Program claims disclose the programs.** Structural for disclosed and for anything with public effects; avoidable only by undisclosed (no public effects, immutable header) or shadow (no public effects, no deployment). `Disclosed` is the default a prover gets without asking, so an author cannot keep their own program undisclosed.
 
 **Amounts crossing the public boundary are visible.** Structural. Shielding and deshielding show the amount on the public side.
 

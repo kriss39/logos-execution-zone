@@ -49,7 +49,7 @@ enum Message {
     Register { registry: Actor, id_commitment: [u8; 32], rate_limit: u64,
                fee: u128, treasury: AccountId },
     /// From a seat to the registry: "I paid `fee` to `treasury` for this member."
-    Enrol { id_commitment: [u8; 32], rate_limit: u64, fee: u128, treasury: AccountId },
+    Enroll { id_commitment: [u8; 32], rate_limit: u64, fee: u128, treasury: AccountId },
     /// To the registry, by anyone who knows a member's secret.
     Slash { identity_secret: [u8; 32] },
 }
@@ -66,12 +66,12 @@ fn handle_message(input: &ReceiveInput, message: Message) -> Response {
             Response::keep_state()
                 .send_sync(Actor::native_balance(input.receiver.account_id),
                       &native_token::Message::Transfer { to: treasury, amount: fee })
-                .send_sync(registry, &Message::Enrol { id_commitment, rate_limit, fee, treasury })
+                .send_sync(registry, &Message::Enroll { id_commitment, rate_limit, fee, treasury })
         }
 
         // The registry: a seat of this program says it paid. Check the price, add the member.
-        Message::Enrol { id_commitment, rate_limit, fee, treasury } => {
-            assert!(input.from_own_program(), "only a seat enrols");
+        Message::Enroll { id_commitment, rate_limit, fee, treasury } => {
+            assert!(input.from_own_program(), "only a seat enrolls");
             let mut reg = Registry::from_bytes(&input.pre_state);
             assert!((MIN_RATE..=MAX_RATE).contains(&rate_limit));
             assert_eq!(treasury, reg.treasury, "paid the wrong account");
@@ -103,7 +103,7 @@ fn handle_message(input: &ReceiveInput, message: Message) -> Response {
 
 ## What to notice
 
-**The registry never sees the money move, and does not need to.** It cannot read the treasury's balance. It trusts the message `Enrol { fee, treasury }` because the message comes from a seat of its own program, and the only code in this program that sends `Enrol` has just sent that transfer. The registry only checks that the amount and the destination are the right ones.
+**The registry never sees the money move, and does not need to.** It cannot read the treasury's balance. It trusts the message `Enroll { fee, treasury }` because the message comes from a seat of its own program, and the only code in this program that sends `Enroll` has just sent that transfer. The registry only checks that the amount and the destination are the right ones.
 
 **Slashing needs no evidence, only the secret.** The registry does not see the two offending messages. Only a member who overspent leaks their secret.
 
@@ -124,7 +124,7 @@ Put the seat on a **private** account and both links disappear.
 
 {{#include ../diagrams/rln-private-registration.svg}}
 
-- The seat runs inside the member's proof. Its payment and its `Enrol` cross to the public side from a blinded address.
+- The seat runs inside the member's proof. Its payment and its `Enroll` cross to the public side from a blinded address.
 - The registry accepts it for the same reason as before: it comes from a seat of its own program. Here that fact is proven, not observed.
 - The chain sees a commitment enter the tree and the treasury receive a fee. It does not see who paid.
 

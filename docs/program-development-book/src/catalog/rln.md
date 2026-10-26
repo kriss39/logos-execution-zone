@@ -58,7 +58,7 @@ enum Effect {
     Admit   { price_per_unit: u128, treasury: AccountId, rate_limit: u64 }, // guard, then count
     Release { rate_limit: u64 },                                            // uncount
     // membership
-    Enrol(Membership),                                    // write once
+    Enroll(Membership),                                    // write once
     Expel { rate_limit: u64 },                            // guard, then clear
     // tree
     Insert([u8; 32]),
@@ -87,7 +87,7 @@ fn plan(input: &PlanInput, ix: Instruction) -> Plan {
             plan.effect(config, &Effect::Admit {
                 price_per_unit, treasury: treasury.account_id, rate_limit });
             plan.inspect(clock, clock.program_account_id, &Effect::ClockIs(now_ms));
-            plan.effect(membership, &Effect::Enrol(Membership {
+            plan.effect(membership, &Effect::Enroll(Membership {
                 rate_limit, expires_ms: now_ms + ACTIVE_MS }));
             plan.effect(tree, &Effect::Insert(hash2(&id_commitment, &rate_limit)));
             plan.call(ChainedCall::new(NATIVE_TOKEN_PROGRAM_ID,
@@ -116,7 +116,7 @@ fn apply(effect: Effect, pre_data: &[u8]) -> Option<Vec<u8>> {
             assert!(c.total_rate_limit <= c.max_total_rate_limit, "the registry is full");
             Some(c.to_bytes())
         }
-        Effect::Enrol(m) => Some(write_once(pre_data, m.to_bytes())),
+        Effect::Enroll(m) => Some(write_once(pre_data, m.to_bytes())),
         Effect::Expel { rate_limit } => {
             assert_eq!(Membership::from_bytes(pre_data).rate_limit, rate_limit, "wrong claim");
             Some(Vec::new())

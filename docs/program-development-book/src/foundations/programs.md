@@ -42,7 +42,7 @@ Deployment is an ordinary public transaction and is charged like one. It cannot 
 
 A mutable header lets its owner swap the bytecode under the same account id, which keeps every PDA and every shard key stable across upgrades. Users who call the program have no protection against that beyond trusting the owner. An immutable header is a promise: the account id will always resolve to this image id.
 
-Immutability buys one more thing. When a header becomes immutable, the loader emits a private **mirror commitment** of the header into the commitment set. That commitment is what lets a private transaction later run the program **without disclosing which program it ran**, by proving membership of the mirror instead of naming the account. See [Program identity](program-identity.md).
+Immutability buys one more thing. When a header becomes immutable, the loader emits a private **mirror commitment** of the header into the commitment set. That commitment is what lets a private transaction later run the program **without disclosing which program it ran**, by proving membership of the mirror instead of naming the account. It only makes that available: each prover chooses per transaction, `Disclosed` is the default, and one transaction that takes the default publishes the id for good. See [Program identity](program-identity.md).
 
 ## Builtin programs
 

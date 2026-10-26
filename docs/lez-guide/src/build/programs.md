@@ -28,7 +28,7 @@ wallet program-loader deploy --elf path/to/program.bin \
   --header <account> --segments <account>...
 ```
 
-The accounts must exist first: one header, plus one segment account per 96 KiB of the user ELF (`MAX_SEGMENT_DATA_LEN`). A wrong segment count fails with `SegmentCountMismatch`, which reports the number expected.
+The accounts must exist first: one header, plus one segment account per 96 KiB of the user ELF (`MAX_SEGMENT_DATA_LEN`). That figure is the client's chunk size and its own comment says so; it is not enforced by the program. What bounds a segment is the per-transaction cap of `max_block_size` less the block overhead. A wrong segment count fails with `SegmentCountMismatch`, which reports the number expected.
 
 Loader messages are allowed only in transactions that carry no proof. A code change must never land in the middle of a transaction whose proof already committed to specific program images.
 

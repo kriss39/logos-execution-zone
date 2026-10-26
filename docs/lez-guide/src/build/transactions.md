@@ -37,7 +37,7 @@ Admission stops messages from creating state at ids nobody can ever control. Its
 
 ### Fees
 
-A public transaction pays for execution and for the bytes it adds to the block. The fee is reserved before execution and the unused part refunded after. Sequencer-injected system transactions (clock, fee distribution, bridge deposits) are exempt.
+A public transaction pays for execution and for the bytes it adds to the block. The fee is reserved before execution and the unused part refunded after. Exempt shapes: genesis transactions, sequencer injections with an empty witness set (bridge deposits, cross-zone dispatches, ping sends), cross-zone locks, and sequencer-stake operations. The clock and fee-distribution transactions are stripped before classification and never pay. Any other user public transaction that omits its fee is rejected with `MissingFeeDeclaration`. A private transaction pays nothing today; the change that ends that has it carry the fee as a reserve inside its proof.
 
 ## Private transactions
 

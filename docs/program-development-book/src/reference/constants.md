@@ -2,7 +2,7 @@
 
 | Constant | Value | Where | Meaning |
 |---|---|---|---|
-| `DATA_MAX_LENGTH` | 100 KiB | `lee_core::account::data` | maximum shard size |
+| `DATA_MAX_LENGTH` | 100 KiB | `lee_core::account::data` (v0.3.1) | maximum shard size. Removed under actors, where actor state has no cap of its own |
 | `MAX_NUMBER_CHAINED_CALLS` | 10 | `lee_core::program` | chained calls per transaction, root excluded |
 | `MAX_PROGRAM_SEGMENTS` | 20 | `lee_core::program` | segments in a program's bytecode chain |
 | `MAX_SEGMENT_DATA_LEN` | 96 KiB | `program_loader_core` | recommended bytes per segment |

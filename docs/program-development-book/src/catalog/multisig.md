@@ -32,7 +32,7 @@ The board still coordinates in public, but it holds only a commitment to the act
 
 {{#include ../diagrams/multisig-all-private.svg}}
 
-Nothing about the multisig is public, provided it is deployed with an immutable header and run as an [undisclosed program](../foundations/program-identity.md): otherwise every one of these transactions names the multisig in its program claims. The two execute columns are alternatives. Paying a private Dave leaves nothing but notes; paying a public Dave shows the credit and its amount, but not which vault or which multisig paid it, because the only public effect is the native token's credit on Dave. The price of all this is turn-taking: each member updates the same private board, so they act one after another.
+Little about the multisig is public, provided it is deployed with an immutable header and every member runs it as an [undisclosed program](../foundations/program-identity.md): otherwise a transaction names the multisig in its program claims, and one member taking the default is enough to publish it permanently. Even undisclosed, the candidate set is the enumerable set of immutable programs. The two execute columns are alternatives. Paying a private Dave leaves nothing but notes; paying a public Dave shows the credit and its amount, but not which vault or which multisig paid it, because the only public effect is the native token's credit on Dave. The price of all this is turn-taking: each member updates the same private board, so they act one after another.
 
 ## One program, any placement
 

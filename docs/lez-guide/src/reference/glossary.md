@@ -24,7 +24,7 @@
 
 **Commitment.** A hash published in place of a private account's contents, or of a stored message.
 
-**Dry run.** The wallet's simulation of a whole private transaction, to learn which messages will cross.
+**Dry run.** The wallet's run of the whole of a private transaction on its own machine, outside any proof, against a snapshot of public actor state. It yields the messages that will cross, the promotions selected and the sender presentations used, and the proof is built against all three. It meters cycles against the public cycle budget, so an over-budget transaction fails here rather than at settlement, but it does not report the count and it does not compute a fee. A public transaction has no dry run. Both of those are changing: the work that makes private transactions pay also turns this into a priced dry run a wallet can call for either kind of transaction.
 
 **Echo.** A handler's proof includes the input it ran on, so the engine can check it was the right input.
 

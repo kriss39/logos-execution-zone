@@ -23,7 +23,7 @@ What the chain learns: the account id and image id of **every program in the dep
 
 Available only for a program whose header is **immutable**. When a header becomes immutable, the loader adds `immutable_mirror_commitment(header_id, header)` to the commitment set. An undisclosed witness carries the header and a Merkle proof of that mirror; the circuit checks `header.immutable`, recomputes the root, and the message carries only `ProgramImageClaim::Undisclosed { root }`. The sequencer checks the root is one the commitment tree has had.
 
-What the chain learns: that *some* immutable program with a mirror under that root was involved. Not which one.
+What the chain learns: that *some* immutable program with a mirror under that root was involved. Not which one, but the candidate set is every immutable program on chain, and immutability is publicly readable, so an observer can enumerate it.
 
 Caveats:
 
@@ -54,7 +54,7 @@ Because a shadow address is derived from the image id alone, everyone running th
 | | Deployed | Claim in message | Public effects | Reveals |
 |---|---|---|---|---|
 | Disclosed | yes | `Disclosed { account, image }` | allowed | which program, always |
-| Undisclosed | yes, immutable | `Undisclosed { root }` | allowed but disclose the program | only a commitment root, if no public effects |
+| Undisclosed | yes, immutable | `Undisclosed { root }` | allowed but disclose the program | only a commitment root, if no public effects, narrowed to the enumerable set of immutable programs |
 | Shadow | no | none | refused at settlement | nothing |
 
 Native token calls are recomputed by the circuit from protocol code; they carry no claim and no receipt, and a private transaction that only moves native balance discloses no program at all. The program loader cannot run privately in any mode.

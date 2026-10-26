@@ -10,7 +10,7 @@ Its contents are on chain in the clear, readable by anyone, forever. Its balance
 wallet account get --scope all --account-id Public/<id>
 ```
 
-Transactions touching it are executed by the sequencer, land in one block, and cost a fee.
+Transactions touching it are executed by the sequencer and land in one block. The fee is charged per transaction rather than per account: a user public transaction must declare one, while a privacy-preserving transaction pays nothing even when it touches a public account (`lez/chain_state/src/classify.rs`). That exemption is interim and a change is in flight to end it: a private transaction will reserve its fee inside its own proof and be refunded the unused part, so the sequencer charges it without learning more than the reserve.
 
 ## A private account
 
@@ -37,7 +37,9 @@ Roughly how many private accounts it touched. The wallet pads every private tran
 
 Every effect it had on a public account, in full. If your private transaction pays a public address, the amount and the recipient are public. This is the single largest source of leaks in practice, and the designs in Part III are mostly about managing it.
 
-Which programs it used, unless they were deployed immutably and run undisclosed.
+Not which private accounts, in the normal case. A private action's nullifier, commitment and note carry no account id and cannot be linked to an account or to each other. An id becomes public only if the transaction puts it there: a private sender that presents canonically instead of blinded, or a public payer that addresses the account at its canonical id rather than at a blinded receive address. The wallet blinds every private sender with a fresh factor per message.
+
+Which programs it used. Each program a private handler ran is named in the clear, by account id and image id, because the sequencer has to resolve the image to check the proof. A program whose header is immutable can instead be proven undisclosed, but that is a choice the prover makes per transaction and `Disclosed` is the default, the anonymity set is only the immutable programs on chain, and one transaction that takes the default publishes the id for good. [Program identity](../build/programs.md) has the detail.
 
 The fact of the proof, which is a fixed size and so says nothing about how much work it covered.
 
