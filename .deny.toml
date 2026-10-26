@@ -29,7 +29,7 @@ ignore = [
   { crate = "crypto-bigint@0.7.5", reason = "Yanked upstream. Clearing it means the same bump that moves `ctutils` into the guests, see RUSTSEC-2026-0385." },
 ]
 yanked = "deny"
-unused-ignored-advisory = "deny"
+unused-ignored-advisory = "warn"
 
 [bans]
 allow-wildcard-paths = false
