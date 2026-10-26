@@ -1,18 +1,33 @@
 #!/usr/bin/env python3
-"""Generates the execution diagrams under src/diagrams/.
+"""Renders one book's execution diagrams from its `diagrams/specs.py`.
+
+Usage: `python3 docs/ci/render_diagrams.py <book-dir> [--out DIR]`, where `<book-dir>` holds
+`diagrams/specs.py`. Writes to `<book-dir>/src/diagrams` unless `--out` says otherwise, which
+is how CI regenerates into a scratch directory and diffs against what is committed.
+
+Both books share this renderer and differ only in their specs.
 
 Grammar: one column per step. The upper band ("hidden") holds what stays with the participants,
 the lower band ("on chain") what everyone can see. Each band holds at most a few short chips.
 A dashed arrow is a private transaction, a solid one a signed public transaction.
-Run from anywhere: `python3 diagrams/gen.py`.
 """
 
+import argparse
+import importlib.util
 import os
+import sys
 from html import escape
 
-from specs import DIAGRAMS
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "diagrams")
+def load_diagrams(book):
+    """Imports `<book>/diagrams/specs.py` and returns its DIAGRAMS tuple."""
+    path = os.path.join(book, "diagrams", "specs.py")
+    if not os.path.isfile(path):
+        sys.exit(f"no specs at {path}")
+    spec = importlib.util.spec_from_file_location("specs", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.DIAGRAMS
 
 COL_W = 160
 GAP = 12
@@ -188,20 +203,28 @@ def legend():
 
 
 def main():
-    os.makedirs(OUT, exist_ok=True)
-    for name in os.listdir(OUT):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("book", help="a book directory holding diagrams/specs.py")
+    parser.add_argument("--out", help="where to write, default <book>/src/diagrams")
+    args = parser.parse_args()
+
+    diagrams = load_diagrams(args.book)
+    out = args.out or os.path.join(args.book, "src", "diagrams")
+
+    os.makedirs(out, exist_ok=True)
+    for name in os.listdir(out):
         if name.endswith(".svg"):
-            os.remove(os.path.join(OUT, name))
-    with open(os.path.join(OUT, "legend.svg"), "w") as f:
+            os.remove(os.path.join(out, name))
+    with open(os.path.join(out, "legend.svg"), "w") as f:
         f.write(legend())
-    for spec in DIAGRAMS:
+    for spec in diagrams:
         for col in spec["columns"]:
             for label in col.get("hidden", []) + col.get("chain", []):
                 assert len(label) <= 24, f"{spec['id']}: chip too long: {label!r}"
         assert len(spec.get("subtitle", "")) <= 95, f"{spec['id']}: subtitle too long"
-        with open(os.path.join(OUT, spec["id"] + ".svg"), "w") as f:
+        with open(os.path.join(out, spec["id"] + ".svg"), "w") as f:
             f.write(render(spec))
-    print(f"wrote {len(DIAGRAMS) + 1} diagrams to {os.path.normpath(OUT)}")
+    print(f"wrote {len(diagrams) + 1} diagrams to {os.path.normpath(out)}")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
-"""Content of every execution diagram. One dict per diagram; see gen.py for the layout.
+"""Content of every execution diagram. One dict per diagram; see `docs/ci/render_diagrams.py` for the layout.
+Regenerate this book's SVGs with `python3 docs/ci/render_diagrams.py docs/<book>` from the
+repository root. CI fails if the committed SVGs no longer match these specs.
 
 Keep chips to a few words (the generator refuses more than 24 characters) and at most three
 per band. Explanations belong in the chapter text, not in the diagram.

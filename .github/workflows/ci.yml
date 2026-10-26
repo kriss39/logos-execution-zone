@@ -556,17 +556,15 @@ jobs:
       - name: Check cited repository paths
         run: python3 docs/ci/check_book_paths.py
 
-      # Diagrams are generated from diagrams/specs.py. Committed SVGs that no
-      # longer match their spec mean a chapter is showing a stale picture.
+      # Diagrams are generated from each book's diagrams/specs.py. Committed SVGs
+      # that no longer match their spec mean a chapter shows a stale picture.
       - name: Check diagrams reproduce from their generator
         run: |
           for book in docs/lez-guide docs/program-development-book; do
             echo "::group::$book"
             work=$(mktemp -d)
-            mkdir -p "$work/src/diagrams"
-            cp -r "$book/diagrams" "$work/diagrams"
-            (cd "$work/diagrams" && python3 gen.py)
-            diff -r "$work/src/diagrams" "$book/src/diagrams"
+            python3 docs/ci/render_diagrams.py "$book" --out "$work"
+            diff -r "$work" "$book/src/diagrams"
             echo "::endgroup::"
           done
 
