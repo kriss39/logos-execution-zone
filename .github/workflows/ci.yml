@@ -337,7 +337,10 @@ jobs:
         uses: ./.github/actions/run-in-ci-image
         with:
           image: ${{ needs.ci-image.outputs.image }}
-          env: RISC0_DEV_MODE=1 CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_TEST_DEBUG=line-tables-only
+          # One pair per line; a single line makes the whole string the
+          # first variable's value.
+          env: |
+            RISC0_DEV_MODE=1
           # Listed from the build just archived: unpacking the archive again
           # overflows the runner's disk.
           run: |
