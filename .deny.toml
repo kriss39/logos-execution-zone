@@ -24,6 +24,7 @@ ignore = [
   { id = "RUSTSEC-2026-0367", reason = "`zip` 2.4.2 reached only through `risc0-circuit-recursion`, which reads its embedded archive in memory and never calls the vulnerable `extract`" },
   { id = "RUSTSEC-2026-0368", reason = "`zip` 2.4.2 reached only through `risc0-circuit-recursion`, which reads its embedded archive in memory and never calls the vulnerable `extract`" },
   { id = "RUSTSEC-2026-0369", reason = "`zip` 2.4.2 reached only through `risc0-circuit-recursion`, which reads its embedded archive in memory and never calls the vulnerable `extract`" },
+  { id = "RUSTSEC-2026-0387", reason = "`crypto-bigint` 0.5.5 is pulled by `elliptic-curve` 0.13 under `k256` 0.13, which the workspace pins directly and also reaches through `libp2p-identity`; the fix only exists in the 0.7 line, which requires migrating the workspace and `libp2p-identity` to `elliptic-curve`/`k256` 0.14. The 0.7 copy in the lockfile is already on the patched 0.7.9" },
 ]
 yanked = "deny"
 unused-ignored-advisory = "deny"
