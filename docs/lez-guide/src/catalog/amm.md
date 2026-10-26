@@ -4,9 +4,9 @@ A constant-product pool over a token program. This entry is different from the r
 
 ## Where it is
 
-`logos-blockchain/lez-programs: programs/amm`, deployed on testnet with a published image id, alongside `programs/token`, `programs/ata`, `programs/stablecoin`, `programs/twap_oracle` and `programs/token_mint_authority`.
+`logos-blockchain/lez-programs: programs/amm`, deployed on the legacy testnet with a published image id, alongside `programs/token`, `programs/twap_oracle` and `programs/token_mint_authority`. The repository also holds `programs/ata` and `programs/stablecoin`, which its deployment record does not list.
 
-It is written against the plan/apply program interface, not the actor interface: its code uses `ChainedCall`, `Claim` and `lee_core::account::Data`. That is correct for every released version of LEZ, and it means this entry describes a program a reader can use today but cannot read as an example of the model in Part III. See [Which interface you are writing for](../understand/which-interface.md) for the translation.
+It is written against neither the actor interface nor plan/apply. It pins `lee_core` at tag `v0.2.5-rc2` and uses `ChainedCall`, `Claim` and `lee_core::account::Data`, which is the whole-account interface LEZ ran before `v0.3.0`. So this entry describes a program a reader can use on the legacy testnet but cannot read as an example of the model in Part III, or of plan/apply either. See [Which interface you are writing for](../understand/which-interface.md) for the translation.
 
 ## The accounts
 

@@ -2,7 +2,7 @@
 
 The Logos Execution Zone is a programmable chain with two kinds of account, public and private, that programs treat identically. A program is a RISC Zero guest binary. It never learns whether the accounts it was given are public or private: the same bytecode runs on the sequencer for a public account and inside the owner's prover for a private one. Privacy is a property of the transaction, not of the program.
 
-> **Which version this describes.** This guide documents the actor program interface, which ships in `v0.4.0`. Every current release, and the testnet deployment, run the earlier plan/apply interface. Parts I, II and IV hold either way; Part III and Part V describe actors. Read [Which interface you are writing for](understand/which-interface.md) before anything else: it is two tables, and it tells you whether the rest of this guide is about the chain you are building on.
+> **Which version this describes.** This guide documents the actor program interface, which ships in `v0.4.0`. The latest release, `v0.3.1`, and the live testnet run the earlier plan/apply interface, and two legacy deployments run an older one still. Parts I, II and IV hold either way; Part III and Part V describe actors. Read [Which interface you are writing for](understand/which-interface.md) before anything else: it is two tables, and it tells you whether the rest of this guide is about the chain you are building on.
 
 This guide is organised by how much you need to know, not by subsystem. Each part is self-contained, and you can stop where your need ends.
 
@@ -34,4 +34,4 @@ Amounts are `u128` unless a program says otherwise. Timestamps are Unix millisec
 
 ## Where this guide came from
 
-It unifies two earlier books, both by Sergio Chouhy. One documented the plan/apply interface and is kept at `docs/program-development-book/`, because plan/apply is what every current release runs. The other documented the actor interface against pull request 935 before it merged; its content forms Part III here, with the names it predicted brought in line with the code that shipped, and it has been removed so the same material does not live in two places.
+It unifies two earlier books, both by Sergio Chouhy. One documented the plan/apply interface and is kept at `docs/program-development-book/`, because plan/apply is what the latest release and the live testnet run. The other documented the actor interface against pull request 935 before it merged; its content forms Part III here, with the names it predicted brought in line with the code that shipped, and it has been removed so the same material does not live in two places.

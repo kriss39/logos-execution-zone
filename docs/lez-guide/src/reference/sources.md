@@ -34,6 +34,6 @@ The book was written from the code of pull request 935, "transactional actors wi
 
 ## Where this guide came from
 
-This guide unifies two earlier books. One documented the actor interface against pull request 935 before it merged; its chapters form Part III here, and it has been removed rather than kept, so there is only ever one copy of that material. The other documented the plan/apply interface, and it is kept at `docs/program-development-book/` because plan/apply is what every current release runs. [Which interface you are writing for](../understand/which-interface.md) says which applies to you.
+This guide unifies two earlier books. One documented the actor interface against pull request 935 before it merged; its chapters form Part III here, and it has been removed rather than kept, so there is only ever one copy of that material. The other documented the plan/apply interface, and it is kept at `docs/program-development-book/` because plan/apply is what the latest release and the live testnet run. [Which interface you are writing for](../understand/which-interface.md) says which applies to you.
 
 Both were written before 935 merged, so the names they predicted have been brought in line with the code that shipped: `Call` is `SyncMessage`, `Cast` is `AsyncMessage`, `Response::call` and `Response::cast` are `send_sync` and `send_async`, `define_actor_logic!` is `actor_entrypoint!`, `WholeTransaction` is `WholeExecution`, and `Scope` is `Mode`.

@@ -1,17 +1,22 @@
 # Which interface you are writing for
 
-LEZ has two program interfaces, and the one you need depends on which version you are building against. Get this wrong and nothing in Part III will compile.
+LEZ has had three program interfaces, and the one you need depends on which version you are building against. Get this wrong and nothing in Part III will compile.
 
 | You are building against | Interface | This guide |
 |---|---|---|
-| Testnet, today | plan/apply | Parts I, II and IV apply. Part III and Part V describe the other interface |
-| The latest release, `v0.3.1` | plan/apply | same |
-| `v0.4.0`, when it ships | actors | the whole guide applies |
-| `dev`, today | actors | the whole guide applies |
+| `dev` today, and `v0.4.0` when it ships | actors | the whole guide applies |
+| `v0.3.1`, the latest release, and `main` | plan/apply | Parts I, II and IV apply. Part III and Part V describe actors |
+| `testnet.lez.logos.co`, which runs `v0.3.1` | plan/apply | same |
+| `v0.2.5-rc3` and earlier | whole accounts | Parts I, II and IV apply in outline only. Neither Part III nor the plan/apply book matches |
+| the legacy testnet and classic devnet, off the `v0.2.4` line | whole accounts | same |
 
-The actor interface merged to `dev` and ships in `v0.4.0`. Until then, every released version and the testnet deployment run plan/apply. `main` is still on the earlier interface, and no tag contains the actor merge.
+The actor interface merged to `dev` and ships in `v0.4.0`; no tag contains it. plan/apply arrived in `v0.3.0` and is what `v0.3.0`, `v0.3.1` and `main` run, `main` being `v0.3.1` exactly.
 
-The deployed programs follow the releases, not `dev`. The token, AMM and ATA programs in `logos-blockchain/lez-programs`, which are live on testnet, are plan/apply programs: their code uses `ChainedCall`, `Claim` and `lee_core::account::Data`.
+Everything released before that ran a third and older interface: one entrypoint, a `ProgramInput` carrying each account in full as `pre_states`, and an output carrying whole account post-states back. There were no shards, no effects and no separate `apply`. A program received the accounts it was given, balance and data included, and returned them changed.
+
+Two deployments still serve that older interface, alongside the current testnet. Which tag each network runs is pinned in the infrastructure repository, not here, so check there before trusting any of this.
+
+The deployed programs follow the oldest line, not the releases. The token, AMM, stablecoin, TWAP-oracle and mint-authority programs in `logos-blockchain/lez-programs` pin `lee_core` at tag `v0.2.5-rc2` and use `ChainedCall`, `Claim` and `lee_core::account::Data`, none of which exist after `v0.2.5`. Its deployment record lists token, AMM, TWAP oracle and mint authority on the legacy testnet. They are neither actor programs nor plan/apply programs.
 
 ## What actually differs
 
@@ -45,6 +50,6 @@ The last three rows of the table are worth noticing on their own. The actor mode
 
 ## If you are on plan/apply
 
-The full manual for it is preserved at `docs/program-development-book/`, last true at commit `8d8ae6e6b`. It documents the interface that is actually running, and it should stay until `v0.4.0` ships.
+The full manual for it is preserved at `docs/program-development-book/`, last true at commit `8d8ae6e6b`. It documents the interface that `v0.3.1` and the live testnet run, and it should stay until `v0.4.0` ships. Neither book documents the whole-account interface that the legacy deployments still serve.
 
 Use the table above when reading older material. Designs, issues and review discussions from before the change are still mostly correct in their reasoning even where the mechanism has a different name now.

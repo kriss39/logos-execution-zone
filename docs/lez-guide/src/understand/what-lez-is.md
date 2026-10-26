@@ -26,9 +26,9 @@ LEZ is a zone on the Logos blockchain. In the L1's own words, Logos is "a privac
 
 A zone is a channel on that chain. The LEZ sequencer produces zone blocks and inscribes them into its channel, and the zone inherits the L1's finality: a zone block is irreversible once the channel message carrying it is. Deposits and withdrawals cross through the same channel. [Finality](../integrate/finality.md) has the mechanism.
 
-Two names appear throughout and are worth separating now. LEE, the Logos Execution Environment, is the state machine, the program interface and the privacy circuit: the part that decides what a program is and what a proof must show. LEZ is the zone built on it: the sequencer, the wallet, the builtin programs. Program authors work almost entirely with LEE types, from the `lee_core` crate.
+Two names appear throughout and are worth separating now. LEE, the Logos Execution Environment, is the state machine, the program interface and the privacy circuit: the part that decides what a program is and what a proof must show. LEZ is the zone built on it: the sequencer, the wallet, the indexer, and most of the builtin programs. Some builtins sit in LEE instead, the native token among them (`lee/state_machine/core/src/native_token.rs`), and the boundary is still moving: `program_loader` is currently split, with its datatypes in `lee_core::program` and its message handling in `lez/programs/program_loader/core/`. Program authors work almost entirely with LEE types, from the `lee_core` crate.
 
-Proving is RISC Zero. A program is a RISC-V binary for the zkVM, identified by an image id that is a hash of its bytecode.
+Proofs are generated with RISC Zero. A program is a RISC-V binary for the zkVM, identified by an image id that is a hash of its bytecode.
 
 ## What this guide will not tell you
 

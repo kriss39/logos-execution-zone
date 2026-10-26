@@ -2,7 +2,7 @@
 
 The token program and the associated-token-account program ship with the zone. This entry reads them as case studies: what they do, how their design follows the pattern language, and what each public/private placement of their accounts means.
 
-Sources: `logos-blockchain/lez-programs: programs/token/`, `logos-blockchain/lez-programs: programs/ata/`, tutorials in `docs/LEZ testnet v0.1 tutorials/`. Both programs moved out of this repository and are deployed on testnet from there.
+Sources: `logos-blockchain/lez-programs: programs/token/`, `logos-blockchain/lez-programs: programs/ata/`, tutorials in `docs/LEZ testnet v0.1 tutorials/`. Both programs moved out of this repository. The token program is deployed from there on the legacy testnet; the ATA program is not in that deployment record.
 
 ## The token program
 
