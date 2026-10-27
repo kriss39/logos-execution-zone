@@ -4,9 +4,9 @@
 # Bedrock, sequencer and indexer state live in volumes, so the stack resumes where it stopped,
 # rebuilds included. `docker compose down -v` (or `just clean`) starts over from a fresh chain.
 #
-# Every host port, image and key path is `${VAR:-default}`; `.env.local` lists them all with
-# their defaults. The `SEQUENCER_*` variables inside the containers are the sequencer's own
-# options, see `sequencer_service start --help`.
+# Every host port, image, key path and cross-service URL is `${VAR:-default}`; `.env.local` lists
+# them all with their defaults. The `SEQUENCER_*` variables inside the containers are the
+# sequencer's own options, see `sequencer_service start --help`.
 
 include:
   # A file of its own, since the Docker-backed tests start Bedrock from it alone.
@@ -28,7 +28,7 @@ x-sequencer-environment: &sequencer_environment
   SEQUENCER_CONFIG: /etc/sequencer_service/sequencer_config.json
   SEQUENCER_CHANNEL_SIGNING_KEY_FILE: /run/secrets/channel_signing_key
   SEQUENCER_FUNDING_PUBLIC_KEY: ${LEZ_COMPOSE_FUNDING_PUBLIC_KEY:-2e03b2eff5a45478e7e79668d2a146cf2c5c7925bce927f2b1c67f2ab4fc0d26}
-  SEQUENCER_BEDROCK_NODE_URL: ${LEZ_COMPOSE_BEDROCK_NODE_URL:-http://logos-blockchain-node-0:18080}
+  SEQUENCER_BEDROCK_NODE_URL: ${LEZ_COMPOSE_SEQUENCER_BEDROCK_NODE_URL:-http://logos-blockchain-node-0:18080}
 
 # Only seq-0 keeps the config's genesis and creates the channel. The others drop it, so one
 # starting before the channel exists waits for it instead of creating a second one.
@@ -139,7 +139,7 @@ services:
     depends_on:
       indexer_service: { condition: service_healthy }
     environment:
-      INDEXER_RPC_URL: http://indexer_service:8779
+      INDEXER_RPC_URL: ${LEZ_COMPOSE_EXPLORER_INDEXER_URL:-http://indexer_service:8779}
     ports:
       - "${LEZ_COMPOSE_EXPLORER_PORT:-8080}:8080"
 
