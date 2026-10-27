@@ -68,16 +68,13 @@ impl<E: ExecutorActorTrait> sequencer_service_rpc::RpcServer for Service<E> {
                 ));
             }
 
-            let authenticated_tx = tx
-                .transaction_stateless_check()
-                .inspect_err(|err| debug!("Error at pre_check {err:#?}"))
-                .map_err(|err| {
-                    ErrorObjectOwned::owned(
-                        ErrorCode::InvalidParams.code(),
-                        err.to_string(),
-                        None::<()>,
-                    )
-                })?;
+            let authenticated_tx = tx.transaction_stateless_check().map_err(|err| {
+                ErrorObjectOwned::owned(
+                    ErrorCode::InvalidParams.code(),
+                    err.to_string(),
+                    None::<()>,
+                )
+            })?;
 
             // Sequencer-only programs (the cross-zone inbox) are injected by the
             // watcher; a user must not invoke them top-level, or anyone could forge

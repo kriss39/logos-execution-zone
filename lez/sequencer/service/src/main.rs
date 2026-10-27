@@ -1,12 +1,12 @@
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
 use anyhow::{Context as _, Result, ensure};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, builder::BoolishValueParser};
 use libp2p::{Multiaddr, multiaddr::Protocol};
 use log::error;
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
@@ -90,11 +90,11 @@ struct StartArgs {
     /// Keeps the genesis of `--config`, so the channel is created if it does not
     /// exist. Without it, a node pointed at the wrong channel fails instead of creating that one.
     /// A home's own config keeps whatever `setup` decided.
-    #[clap(long, env = "SEQUENCER_CREATE_CHANNEL")]
+    #[clap(long, env = "SEQUENCER_CREATE_CHANNEL", value_parser = BoolishValueParser::new())]
     create_channel: bool,
     /// Waits for the channel to be created, instead of failing, when it does not exist yet and
     /// this node has no genesis to create it with.
-    #[clap(long, env = "SEQUENCER_WAIT_FOR_CHANNEL")]
+    #[clap(long, env = "SEQUENCER_WAIT_FOR_CHANNEL", value_parser = BoolishValueParser::new())]
     wait_for_channel: bool,
     /// Defaults to `<home>/channel_signing_key`.
     #[clap(long, env = "SEQUENCER_CHANNEL_SIGNING_KEY_FILE")]
@@ -169,8 +169,16 @@ async fn start(args: StartArgs) -> Result<()> {
     let config = load_config(&args)?;
     log_config(&config)?;
 
-    let ops_listener = match config.metrics_listen_address {
-        Some(address) => Some((ops::bind(address).await?, install_prometheus_recorder()?)),
+    // Served from the start, so probes and metrics answer while startup waits on Bedrock.
+    let sequencer_cell = Arc::new(OnceLock::new());
+    let ops_shutdown = CancellationToken::new();
+    let ops_server = match config.metrics_listen_address {
+        Some(address) => Some(tokio::spawn(ops::serve(
+            ops::bind(address).await?,
+            install_prometheus_recorder()?,
+            Arc::clone(&sequencer_cell),
+            ops_shutdown.clone(),
+        ))),
         None => None,
     };
     // Startup can wait on Bedrock for long, e.g. `--wait-for-channel`, so a stop must cut it short.
@@ -181,15 +189,7 @@ async fn start(args: StartArgs) -> Result<()> {
             return Ok(());
         }
     };
-    let ops_shutdown = CancellationToken::new();
-    let ops_server = ops_listener.map(|(listener, metrics)| {
-        tokio::spawn(ops::serve(
-            listener,
-            metrics,
-            Arc::clone(&sequencer_handle),
-            ops_shutdown.clone(),
-        ))
-    });
+    sequencer_cell.get_or_init(|| Arc::clone(&sequencer_handle));
 
     tokio::select! {
         () = cancellation_token.cancelled() => {
@@ -213,6 +213,7 @@ async fn start(args: StartArgs) -> Result<()> {
             Err(err) => error!("Ops server panicked: {err}"),
         }
     }
+    drop(sequencer_cell);
     Arc::into_inner(sequencer_handle)
         .expect("the ops server, the only other holder, has stopped")
         .shutdown()
@@ -241,7 +242,8 @@ fn load_config(args: &StartArgs) -> Result<SequencerConfig> {
     );
     let mut config = SequencerConfig::from_path(&config_path)
         .with_context(|| format!("Failed to read {}", config_path.display()))?;
-    if explicit_config && !args.create_channel {
+    if explicit_config && !args.create_channel && config.genesis.is_some() {
+        log::info!("Ignoring the config's genesis, as --create-channel is not set");
         config.genesis = None;
     }
 

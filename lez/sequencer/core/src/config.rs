@@ -113,7 +113,6 @@ pub struct SequencerConfig {
     pub channel_signing_key_file: Option<PathBuf>,
     /// Overrides `<home>/bedrock_funding_public_key`.
     /// This is a "per-node" setting, and should not be read from a shared config.
-    /// config.
     #[serde(skip)]
     pub funding_public_key: Option<ZkPublicKey>,
     /// Without a `genesis`, waits for the channel's creator instead of failing when the channel
